@@ -1,12 +1,36 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import Icon from './Icon';
 
 function ConfirmModal({ isOpen, title, message, confirmText = '确定', cancelText = '取消', onConfirm, onCancel, danger = false }) {
-  if (!isOpen) return null;
+  const [isClosing, setIsClosing] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) {
+      setIsClosing(false);
+    }
+  }, [isOpen]);
+
+  if (!isOpen && !isClosing) return null;
+
+  const handleClose = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onCancel();
+    }, 200);
+  };
+
+  const handleConfirm = () => {
+    setIsClosing(true);
+    setTimeout(() => {
+      setIsClosing(false);
+      onConfirm();
+    }, 200);
+  };
 
   return (
-    <div className="modal-overlay" onClick={onCancel}>
-      <div className="confirm-modal" onClick={e => e.stopPropagation()}>
+    <div className={`modal-overlay ${isClosing ? 'modal-closing' : ''}`} onClick={handleClose}>
+      <div className={`confirm-modal ${isClosing ? 'modal-content-closing' : ''}`} onClick={e => e.stopPropagation()}>
         <div className="confirm-modal-header">
           <div className={`confirm-modal-icon ${danger ? 'danger' : ''}`}>
             <Icon name={danger ? 'alert-triangle' : 'help-circle'} size={24} />
@@ -17,12 +41,12 @@ function ConfirmModal({ isOpen, title, message, confirmText = '确定', cancelTe
           <p>{message}</p>
         </div>
         <div className="confirm-modal-actions">
-          <button className="btn btn-secondary" onClick={onCancel}>
+          <button className="btn btn-secondary" onClick={handleClose}>
             {cancelText}
           </button>
           <button 
             className={`btn ${danger ? 'btn-danger' : 'btn-primary'}`} 
-            onClick={onConfirm}
+            onClick={handleConfirm}
           >
             {confirmText}
           </button>

@@ -289,12 +289,14 @@ function Icon({ name, className, size = 16 }) {
     return null;
   }
   
+  const isCustomSize = className?.includes('sidebar-title-icon');
+  
   return (
     <span 
       className={`icon ${className || ''}`} 
-      style={{ width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+      style={isCustomSize ? { display: 'inline-flex', alignItems: 'center', justifyContent: 'center' } : { width: size, height: size, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
     >
-      {React.cloneElement(icon, { width: size, height: size })}
+      {React.cloneElement(icon, { width: isCustomSize ? 14 : size, height: isCustomSize ? 14 : size })}
     </span>
   );
 }

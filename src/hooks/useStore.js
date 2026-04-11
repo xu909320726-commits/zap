@@ -110,13 +110,20 @@ export function useStore() {
     return taskWithParsed;
   }, [tasks]);
 
-  const deleteTask = useCallback(async (taskId) => {
+  const deleteTask = useCallback(async (taskId, deleteReason = null) => {
     const taskToDelete = tasks.find(t => t.id === taskId);
     if (!taskToDelete) return;
     
-    await dbUpdate('tasks', taskId, { deletedAt: new Date().toISOString() });
+    await dbUpdate('tasks', taskId, { 
+      deletedAt: new Date().toISOString(),
+      deleteReason: deleteReason
+    });
     
-    const deletedTaskWithMeta = { ...taskToDelete, deletedAt: new Date().toISOString() };
+    const deletedTaskWithMeta = { 
+      ...taskToDelete, 
+      deletedAt: new Date().toISOString(),
+      deleteReason: deleteReason
+    };
     const newTasks = tasks.filter(t => t.id !== taskId);
     const newDeletedTasks = [...deletedTasks, deletedTaskWithMeta];
     

@@ -7,7 +7,10 @@ import AddTaskCard from './components/AddTaskCard';
 import Icon from './components/Icon';
 import GlobalSearch from './components/GlobalSearch';
 import ConfirmModal from './components/ConfirmModal';
+import DeleteReasonModal from './components/DeleteReasonModal';
+import { ToastContainer } from './components/Toast';
 import Dashboard from './components/Dashboard';
+import Tooltip from './components/Tooltip';
 
 // 菜单配置
 const MENU_CONFIG = {
@@ -99,10 +102,37 @@ function App() {
   const [animatingTaskId, setAnimatingTaskId] = useState(null);
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', onConfirm: null, danger: false });
   const [noteModal, setNoteModal] = useState({ isOpen: false, taskId: null, note: '' });
+  const [noteModalClosing, setNoteModalClosing] = useState(false);
+  const [editingTaskClosing, setEditingTaskClosing] = useState(false);
   const [copyingTaskId, setCopyingTaskId] = useState(null);
+  const [deleteReasonModal, setDeleteReasonModal] = useState({ isOpen: false, taskId: null, taskTitle: '' });
+  const [toasts, setToasts] = useState([]);
 
   const searchInputRef = useRef(null);
   const addTaskCardRef = useRef(null);
+
+  // Toast 提示函数
+  const showToast = useCallback((message, type = 'success', duration = 3000) => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type, isVisible: true, duration }]);
+  }, []);
+
+  const removeToast = useCallback((id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  }, []);
+
+  // 重置关闭动画状态
+  useEffect(() => {
+    if (!noteModal.isOpen && noteModalClosing) {
+      setNoteModalClosing(false);
+    }
+  }, [noteModal.isOpen, noteModalClosing]);
+
+  useEffect(() => {
+    if (!editingTask && editingTaskClosing) {
+      setEditingTaskClosing(false);
+    }
+  }, [editingTask, editingTaskClosing]);
 
   // 初始化滑动指示器
   useEffect(() => {
@@ -790,10 +820,12 @@ function App() {
                       </>
                     )}
                     {task.note && (
-                      <span className="task-note-indicator" title={task.note}>
-                        <Icon name="file-text" size={12} />
-                        会员备注
-                      </span>
+                      <Tooltip content={task.note}>
+                        <span className="task-note-indicator">
+                          <Icon name="file-text" size={12} />
+                          备注
+                        </span>
+                      </Tooltip>
                     )}
                   </div>
                 )}
@@ -848,7 +880,7 @@ function App() {
                   className="task-action-btn delete"
                   onClick={(e) => {
                     e.stopPropagation();
-                    deleteTask(task.id);
+                    setDeleteReasonModal({ isOpen: true, taskId: task.id, taskTitle: task.title });
                   }}
                 >
                   <Icon name="trash-2" />
@@ -891,12 +923,12 @@ function App() {
       {renderTaskList()}
 
       {/* 编辑任务弹窗 */}
-      {editingTask && (
-        <div className="modal-overlay" onClick={() => setEditingTask(null)}>
-          <div className="modal-content task-edit-modal" onClick={e => e.stopPropagation()}>
+      {(editingTask || editingTaskClosing) && (
+        <div className={`modal-overlay ${editingTaskClosing ? 'modal-closing' : ''}`} onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
+          <div className={`modal-content task-edit-modal ${editingTaskClosing ? 'modal-content-closing' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>编辑任务</h3>
-              <button className="modal-close-btn" onClick={() => setEditingTask(null)}>
+              <button className="modal-close-btn" onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
                 <Icon name="x" />
               </button>
             </div>
@@ -999,10 +1031,11 @@ function App() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setEditingTask(null)}>
+              <button className="btn btn-secondary" onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
                 取消
               </button>
               <button className="btn btn-primary" onClick={async () => {
+                setEditingTaskClosing(true);
                 await updateTask(editingTask.id, {
                   title: editingTask.title,
                   dueDate: editingTask.dueDate,
@@ -1011,7 +1044,11 @@ function App() {
                   linkUrl: editingTask.linkUrl || null,
                   note: editingTask.note || null
                 });
-                setEditingTask(null);
+                setTimeout(() => {
+                  setEditingTaskClosing(false);
+                  setEditingTask(null);
+                  showToast('任务已更新');
+                }, 200);
               }}>
                 保存
               </button>
@@ -1019,6 +1056,20 @@ function App() {
           </div>
         </div>
       )}
+
+      {/* 删除任务弹窗 */}
+      <DeleteReasonModal
+        isOpen={deleteReasonModal.isOpen}
+        taskTitle={deleteReasonModal.taskTitle}
+        onConfirm={async (reason) => {
+          await deleteTask(deleteReasonModal.taskId, reason);
+          setDeleteReasonModal({ isOpen: false, taskId: null, taskTitle: '' });
+          showToast('任务已删除');
+        }}
+        onCancel={() => setDeleteReasonModal({ isOpen: false, taskId: null, taskTitle: '' })}
+      />
+
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
   );
 
@@ -1177,6 +1228,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
   }
@@ -1235,7 +1287,7 @@ function App() {
                     {deletedTasks.length} 个已删除任务
                   </span>
                 </div>
-                {deletedTasks.map(task => (
+                {[...deletedTasks].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt)).map(task => (
                   <div
                     key={task.id}
                     className="task-item"
@@ -1255,6 +1307,12 @@ function App() {
                           <Icon name="clock" size={12} />
                           删除于 {formatDeletedDate(task.deletedAt)}
                         </span>
+                        {task.deleteReason && (
+                          <span className="task-delete-reason">
+                            <Icon name="trash-2" size={12} />
+                            {task.deleteReason}
+                          </span>
+                        )}
                       </div>
                     </div>
 
@@ -1334,6 +1392,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
   }
@@ -1403,6 +1462,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
   }
@@ -1454,6 +1514,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
       </div>
     );
   }
@@ -1521,12 +1582,12 @@ function App() {
         onConfirm={confirmModal.onConfirm}
         onCancel={() => setConfirmModal({ isOpen: false })}
       />
-      {noteModal.isOpen && (
-        <div className="modal-overlay" onClick={() => setNoteModal({ isOpen: false, taskId: null, note: '' })}>
-          <div className="modal-content note-modal" onClick={e => e.stopPropagation()}>
+      {(noteModal.isOpen || noteModalClosing) && (
+        <div className={`modal-overlay ${noteModalClosing ? 'modal-closing' : ''}`} onClick={() => setNoteModalClosing(true) || setTimeout(() => setNoteModal({ isOpen: false, taskId: null, note: '' }), 200)}>
+          <div className={`modal-content note-modal ${noteModalClosing ? 'modal-content-closing' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>添加备注</h3>
-              <button className="modal-close-btn" onClick={() => setNoteModal({ isOpen: false, taskId: null, note: '' })}>
+              <button className="modal-close-btn" onClick={() => setNoteModalClosing(true) || setTimeout(() => setNoteModal({ isOpen: false, taskId: null, note: '' }), 200)}>
                 <Icon name="x" />
               </button>
             </div>
@@ -1544,12 +1605,17 @@ function App() {
               </div>
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setNoteModal({ isOpen: false, taskId: null, note: '' })}>
+              <button className="btn btn-secondary" onClick={() => setNoteModalClosing(true) || setTimeout(() => setNoteModal({ isOpen: false, taskId: null, note: '' }), 200)}>
                 取消
               </button>
               <button className="btn btn-primary" onClick={async () => {
+                setNoteModalClosing(true);
                 await updateTask(noteModal.taskId, { note: noteModal.note });
-                setNoteModal({ isOpen: false, taskId: null, note: '' });
+                setTimeout(() => {
+                  setNoteModalClosing(false);
+                  setNoteModal({ isOpen: false, taskId: null, note: '' });
+                  showToast('备注已保存');
+                }, 200);
               }}>
                 保存
               </button>
@@ -1557,6 +1623,7 @@ function App() {
           </div>
         </div>
       )}
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </div>
   );
 }
