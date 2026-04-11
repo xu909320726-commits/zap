@@ -1,0 +1,22 @@
+{
+  "appId": "com.zap.app",
+  "productName": "Zap",
+  "directories": {
+    "output": "dist"
+  },
+  "files": [
+    "build/**/*",
+    "main.js",
+    "preload.js"
+  ],
+  "win": {
+    "target": "nsis",
+    "icon": "public/zap_icon.ico"
+  },
+  "nsis": {
+    "oneClick": false,
+    "allowToChangeInstallationDirectory": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true
+  }
+}

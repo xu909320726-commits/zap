@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.exe
+*.asar
+*.dmg
+*.deb
+*.rpm
+.DS_Store
+Thumbs.db
