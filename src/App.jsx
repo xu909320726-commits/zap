@@ -109,6 +109,11 @@ function App() {
   const [deleteReasonModal, setDeleteReasonModal] = useState({ isOpen: false, taskId: null, taskTitle: '' });
   const [modificationHistoryModal, setModificationHistoryModal] = useState({ isOpen: false, taskId: null, taskTitle: '', modifications: [] });
   const [toasts, setToasts] = useState([]);
+  const [completedFilterDate, setCompletedFilterDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
+  const [completedFilterMode, setCompletedFilterMode] = useState('day'); // 'day' or 'week'
 
   const searchInputRef = useRef(null);
   const addTaskCardRef = useRef(null);
@@ -472,7 +477,29 @@ function App() {
       return tasks.filter(t => !t.completed);
     }
     if (activeListId === 'done') {
-      return tasks.filter(t => t.completed);
+      const filterDate = new Date(completedFilterDate);
+      if (completedFilterMode === 'week') {
+        const weekStart = new Date(filterDate);
+        weekStart.setDate(filterDate.getDate() - filterDate.getDay() + 1);
+        weekStart.setHours(0, 0, 0, 0);
+        const weekEnd = new Date(weekStart);
+        weekEnd.setDate(weekStart.getDate() + 6);
+        weekEnd.setHours(23, 59, 59, 999);
+        return tasks.filter(t => {
+          if (!t.completed) return false;
+          if (!t.completedAt) return false;
+          const completedDate = new Date(t.completedAt);
+          return completedDate >= weekStart && completedDate <= weekEnd;
+        });
+      } else {
+        filterDate.setHours(23, 59, 59, 999);
+        return tasks.filter(t => {
+          if (!t.completed) return false;
+          if (!t.completedAt) return false;
+          const completedDate = new Date(t.completedAt);
+          return completedDate.toDateString() === filterDate.toDateString();
+        });
+      }
     }
     return getTasksByList(activeListId);
   };
@@ -735,29 +762,93 @@ function App() {
   // 渲染任务列表
   const renderTaskList = () => (
     <div className="task-list">
+      {activeListId === 'done' && (
+        <div className="task-list-header">
+          <div className="completed-filter">
+            <div className="completed-filter-quick">
+              <button
+                className={`completed-filter-quick-btn ${(() => {
+                  if (completedFilterMode === 'week') return '';
+                  const today = new Date();
+                  const filterDate = new Date(completedFilterDate);
+                  return today.toDateString() === filterDate.toDateString() ? 'active' : '';
+                })()}`}
+                onClick={() => {
+                  const today = new Date();
+                  setCompletedFilterDate(`${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`);
+                  setCompletedFilterMode('day');
+                }}
+              >
+                今天
+              </button>
+              <button
+                className={`completed-filter-quick-btn ${(() => {
+                  if (completedFilterMode === 'week') return '';
+                  const yesterday = new Date();
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  const filterDate = new Date(completedFilterDate);
+                  return yesterday.toDateString() === filterDate.toDateString() ? 'active' : '';
+                })()}`}
+                onClick={() => {
+                  const yesterday = new Date();
+                  yesterday.setDate(yesterday.getDate() - 1);
+                  setCompletedFilterDate(`${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, '0')}-${String(yesterday.getDate()).padStart(2, '0')}`);
+                  setCompletedFilterMode('day');
+                }}
+              >
+                昨天
+              </button>
+              <button
+                className={`completed-filter-quick-btn ${completedFilterMode === 'week' ? 'active' : ''}`}
+                onClick={() => {
+                  const today = new Date();
+                  const weekStart = new Date(today);
+                  weekStart.setDate(today.getDate() - today.getDay() + 1);
+                  setCompletedFilterDate(`${weekStart.getFullYear()}-${String(weekStart.getMonth() + 1).padStart(2, '0')}-${String(weekStart.getDate()).padStart(2, '0')}`);
+                  setCompletedFilterMode('week');
+                }}
+              >
+                本周
+              </button>
+            </div>
+            <input
+              type="date"
+              className="completed-filter-input"
+              value={completedFilterDate}
+              onChange={(e) => {
+                setCompletedFilterDate(e.target.value);
+                setCompletedFilterMode('day');
+              }}
+            />
+          </div>
+        </div>
+      )}
       {sortedTasks.length === 0 ? (
         <div className="task-empty">
           <div className="task-empty-icon-wrapper">
             <Icon name={isSearchMode ? 'search' : (activeListId === 'done' ? 'check-circle' : 'clipboard-list')} />
           </div>
           <div className="task-empty-text">
-            {isSearchMode ? '没有找到匹配的任务' : activeListId === 'done' ? '暂无已完成任务' : '暂无任务'}
+            {isSearchMode ? '没有找到匹配的任务' : activeListId === 'done' ? '该日期暂无已完成任务' : '暂无任务'}
           </div>
           <div className="task-empty-hint">
             {isSearchMode ? '尝试其他关键词' : (
+              activeListId === 'done' ? '尝试选择其他日期' : (
               <>
                 按 <span className="shortcut">Ctrl</span> + <span className="shortcut">N</span> 快速添加任务
               </>
-            )}
+            ))}
           </div>
         </div>
       ) : (
         <>
-          <div className="task-list-header">
-            <span className="task-count">
-              {sortedTasks.filter(t => !t.completed).length} 个待办，{sortedTasks.filter(t => t.completed).length} 个已完成
-            </span>
-          </div>
+          {activeListId !== 'done' && (
+            <div className="task-list-header">
+              <span className="task-count">
+                {sortedTasks.filter(t => !t.completed).length} 个待办，{sortedTasks.filter(t => t.completed).length} 个已完成
+              </span>
+            </div>
+          )}
           {sortedTasks.map(task => (
             <div
               key={task.id}
