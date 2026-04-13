@@ -2,6 +2,10 @@ import React, { useState, useCallback, useEffect } from 'react';
 import { useStore } from '../hooks/useStore';
 import { formatDueDate } from '../utils/dateParser';
 import Icon from './Icon';
+import ExportModal from './ExportModal';
+import * as XLSX from 'xlsx';
+
+const MAX_EXPORT_DAYS = 30;
 
 // 星期标题
 const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六'];
@@ -14,10 +18,11 @@ const VIEW_TYPES = {
   TIMELINE: 'timeline'
 };
 
-function Calendar({ onClose, highlightedTaskId }) {
+function Calendar({ onClose, highlightedTaskId, showToast }) {
   const { tasks, updateTask, tags } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState(VIEW_TYPES.MONTH);
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // 初始化 Lucide 图标
   useEffect(() => {
@@ -146,6 +151,113 @@ function Calendar({ onClose, highlightedTaskId }) {
 
   const goToToday = () => {
     setCurrentDate(new Date());
+  };
+
+  const getTasksInDateRange = useCallback((startDate, endDate) => {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    start.setHours(0, 0, 0, 0);
+    end.setHours(23, 59, 59, 999);
+
+    return tasks.filter(task => {
+      if (!task.dueDate) return false;
+      const taskDate = new Date(task.dueDate);
+      return taskDate >= start && taskDate <= end;
+    });
+  }, [tasks]);
+
+  const handleExport = async ({ startDate, endDate }) => {
+    const tasksInRange = getTasksInDateRange(startDate, endDate);
+
+    if (tasksInRange.length === 0) {
+      showToast('所选时间段内没有任务', 'warning');
+      return;
+    }
+
+    const data = tasksInRange.map(task => {
+      const modifications = task.modifications || [];
+      const modificationRecords = modifications.map(m => {
+        const date = new Date(m.modifiedAt);
+        const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
+        return `[${dateStr}] ${m.reason || '(无原因)'} - ${m.changes || '(无变更)'}`;
+      }).join('\n');
+
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const d = new Date(dateStr);
+        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+      };
+
+      const formatDateRange = (dueDate, endDate) => {
+        if (!dueDate) return '';
+        const due = new Date(dueDate);
+        const dueStr = formatDate(dueDate);
+        if (!endDate) return dueStr;
+        const end = new Date(endDate);
+        if (due.toDateString() === end.toDateString()) {
+          return dueStr;
+        }
+        return `${dueStr} ~ ${formatDate(endDate)}`;
+      };
+
+      const taskData = {
+        '日期': formatDateRange(task.dueDate, task.endDate),
+        '任务名称': task.title,
+        '备注': task.note || '',
+        '修改记录': modificationRecords || ''
+      };
+      if (task.linkUrl) {
+        taskData['任务名称'] = { v: task.title, l: { Target: task.linkUrl } };
+      }
+      return taskData;
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, '任务导出');
+
+    const keys = ['日期', '任务名称', '备注', '修改记录'];
+    const cols = keys.map((key, i) => {
+      let maxLen = key.length;
+      data.forEach(row => {
+        const val = String(row[key]?.v || row[key] || '');
+        const lines = val.split('\n');
+        lines.forEach(line => {
+          maxLen = Math.max(maxLen, line.length);
+        });
+      });
+      return { wch: Math.min(Math.max(maxLen + 2, 10), 80) };
+    });
+    ws['!cols'] = cols;
+
+    const range = XLSX.utils.decode_range(ws['!ref']);
+    const rows = [];
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      rows.push({ hpt: 30 });
+    }
+    ws['!rows'] = rows;
+
+    for (let R = range.s.r; R <= range.e.r; R++) {
+      for (let C = range.s.c; C <= range.e.c; C++) {
+        const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
+        if (cell) {
+          cell.s = {
+            alignment: {
+              vertical: 'center',
+              wrapText: true
+            }
+          };
+        }
+      }
+    }
+
+    const startFormatted = startDate.replace(/-/g, '');
+    const endFormatted = endDate.replace(/-/g, '');
+    const filename = `zap_tasks_${startFormatted}_${endFormatted}.xlsx`;
+
+    XLSX.writeFile(wb, filename);
+
+    showToast(`导出成功，共 ${tasksInRange.length} 条任务`, 'success');
   };
 
   // 获取视图标题
@@ -544,11 +656,26 @@ function Calendar({ onClose, highlightedTaskId }) {
             时间线
           </button>
         </div>
+
+        <button 
+          className="export-btn"
+          onClick={() => setShowExportModal(true)}
+          title="导出任务"
+        >
+          <Icon name="download" size={14} />
+          导出
+        </button>
       </div>
       
       <div className="calendar-content">
         {renderCurrentView()}
       </div>
+
+      <ExportModal
+        isOpen={showExportModal}
+        onExport={handleExport}
+        onCancel={() => setShowExportModal(false)}
+      />
     </div>
   );
 }

@@ -104,8 +104,10 @@ function App() {
   const [noteModal, setNoteModal] = useState({ isOpen: false, taskId: null, note: '' });
   const [noteModalClosing, setNoteModalClosing] = useState(false);
   const [editingTaskClosing, setEditingTaskClosing] = useState(false);
+  const [editingTaskReason, setEditingTaskReason] = useState('');
   const [copyingTaskId, setCopyingTaskId] = useState(null);
   const [deleteReasonModal, setDeleteReasonModal] = useState({ isOpen: false, taskId: null, taskTitle: '' });
+  const [modificationHistoryModal, setModificationHistoryModal] = useState({ isOpen: false, taskId: null, taskTitle: '', modifications: [] });
   const [toasts, setToasts] = useState([]);
 
   const searchInputRef = useRef(null);
@@ -885,6 +887,23 @@ function App() {
                 >
                   <Icon name="trash-2" />
                 </button>
+                {task.modifications && task.modifications.length > 0 && (
+                  <button 
+                    className="task-action-btn history"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setModificationHistoryModal({ 
+                        isOpen: true, 
+                        taskId: task.id, 
+                        taskTitle: task.title, 
+                        modifications: task.modifications 
+                      });
+                    }}
+                    title="修改记录"
+                  >
+                    <Icon name="history" />
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -923,12 +942,12 @@ function App() {
       {renderTaskList()}
 
       {/* 编辑任务弹窗 */}
-      {(editingTask || editingTaskClosing) && (
-        <div className={`modal-overlay ${editingTaskClosing ? 'modal-closing' : ''}`} onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
+      {editingTask && (
+        <div className="modal-overlay" onClick={() => { setEditingTaskClosing(true); setTimeout(() => { setEditingTask(null); setEditingTaskReason(''); }, 200); }}>
           <div className={`modal-content task-edit-modal ${editingTaskClosing ? 'modal-content-closing' : ''}`} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <h3>编辑任务</h3>
-              <button className="modal-close-btn" onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
+              <button className="modal-close-btn" onClick={() => { setEditingTaskClosing(true); setTimeout(() => { setEditingTask(null); setEditingTaskReason(''); }, 200); }}>
                 <Icon name="x" />
               </button>
             </div>
@@ -1029,9 +1048,19 @@ function App() {
                   onChange={(e) => setEditingTask({ ...editingTask, note: e.target.value })}
                 />
               </div>
+              <div className="form-group">
+                <label>修改原因</label>
+                <textarea
+                  className="form-input"
+                  rows={2}
+                  placeholder="请填写修改原因（选填）..."
+                  value={editingTaskReason}
+                  onChange={(e) => setEditingTaskReason(e.target.value)}
+                />
+              </div>
             </div>
             <div className="modal-actions">
-              <button className="btn btn-secondary" onClick={() => setEditingTaskClosing(true) || setTimeout(() => setEditingTask(null), 200)}>
+              <button className="btn btn-secondary" onClick={() => { setEditingTaskClosing(true); setTimeout(() => { setEditingTask(null); setEditingTaskReason(''); }, 200); }}>
                 取消
               </button>
               <button className="btn btn-primary" onClick={async () => {
@@ -1043,10 +1072,11 @@ function App() {
                   tagIds: editingTask.tagIds || [],
                   linkUrl: editingTask.linkUrl || null,
                   note: editingTask.note || null
-                });
+                }, editingTaskReason || null);
                 setTimeout(() => {
                   setEditingTaskClosing(false);
                   setEditingTask(null);
+                  setEditingTaskReason('');
                   showToast('任务已更新');
                 }, 200);
               }}>
@@ -1068,6 +1098,72 @@ function App() {
         }}
         onCancel={() => setDeleteReasonModal({ isOpen: false, taskId: null, taskTitle: '' })}
       />
+
+      {/* 修改记录弹窗 */}
+      {modificationHistoryModal.isOpen && (
+        <div className="modal-overlay" onClick={() => setModificationHistoryModal({ isOpen: false, taskId: null, taskTitle: '', modifications: [] })}>
+          <div className="modification-history-modal" onClick={e => e.stopPropagation()}>
+            <div className="modification-history-header">
+              <div className="modification-history-icon">
+                <Icon name="history" size={24} />
+              </div>
+              <div className="modification-history-title-section">
+                <h3 className="modification-history-title">修改记录</h3>
+                <p className="modification-history-task-title">{modificationHistoryModal.taskTitle}</p>
+              </div>
+              <button 
+                className="modification-history-close-btn"
+                onClick={() => setModificationHistoryModal({ isOpen: false, taskId: null, taskTitle: '', modifications: [] })}
+              >
+                <Icon name="x" size={18} />
+              </button>
+            </div>
+            <div className="modification-history-body">
+              {modificationHistoryModal.modifications.length === 0 ? (
+                <div className="modification-history-empty">
+                  <Icon name="clipboard-list" size={48} />
+                  <p>暂无修改记录</p>
+                </div>
+              ) : (
+                <div className="modification-timeline">
+                  {[...modificationHistoryModal.modifications].reverse().map((mod, index) => (
+                    <div key={mod.id || index} className="modification-item">
+                      <div className="modification-timeline-marker">
+                        <div className="modification-timeline-dot"></div>
+                        {index < modificationHistoryModal.modifications.length - 1 && <div className="modification-timeline-line"></div>}
+                      </div>
+                      <div className="modification-card">
+                        <div className="modification-card-header">
+                          <span className="modification-reason">{mod.reason || '更新任务'}</span>
+                          <span className="modification-time">
+                            <Icon name="clock" size={12} />
+                            {new Date(mod.modifiedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        {mod.changes && (
+                          <div className="modification-changes">
+                            {mod.changes.split('; ').map((change, i) => (
+                              <div key={i} className="modification-change-item">
+                                <Icon name="arrow-right" size={12} />
+                                <span>{change}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            <div className="modification-history-footer">
+              <button className="btn btn-primary" onClick={() => setModificationHistoryModal({ isOpen: false, taskId: null, taskTitle: '', modifications: [] })}>
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
@@ -1313,6 +1409,27 @@ function App() {
                             {task.deleteReason}
                           </span>
                         )}
+                        {task.linkUrl && (
+                          <button
+                            className="task-link-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (window.electronAPI && window.electronAPI.openExternal) {
+                                window.electronAPI.openExternal(task.linkUrl);
+                              } else {
+                                window.open(task.linkUrl, '_blank');
+                              }
+                            }}
+                            title={task.linkUrl}
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                              <polyline points="15 3 21 3 21 9"></polyline>
+                              <line x1="10" y1="14" x2="21" y2="3"></line>
+                            </svg>
+                            链接
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -1473,7 +1590,7 @@ function App() {
       <div className="app">
         {renderSidebar()}
         <div className="main-content calendar-view">
-          <Calendar highlightedTaskId={highlightedTaskId} />
+          <Calendar highlightedTaskId={highlightedTaskId} showToast={showToast} />
         </div>
         <GlobalSearch
           isOpen={isSearchOpen}

@@ -19,7 +19,8 @@ export function useStore() {
       completed: row.completed === 1,
       isDefault: row.isDefault === 1,
       tagIds: row.tagIds ? JSON.parse(row.tagIds) : [],
-      linkUrl: row.linkUrl || null
+      linkUrl: row.linkUrl || null,
+      modifications: row.modifications ? JSON.parse(row.modifications) : []
     }));
   }, []);
 
@@ -158,7 +159,10 @@ export function useStore() {
     setDeletedTasks([]);
   }, [deletedTasks]);
 
-  const updateTask = useCallback(async (taskId, updates) => {
+  const updateTask = useCallback(async (taskId, updates, modificationReason = null) => {
+    const task = tasks.find(t => t.id === taskId);
+    if (!task) return;
+
     const serialized = { ...updates };
     if (updates.tagIds !== undefined) {
       serialized.tagIds = JSON.stringify(updates.tagIds);
@@ -166,8 +170,59 @@ export function useStore() {
     if (updates.completed !== undefined) {
       serialized.completed = updates.completed ? 1 : 0;
     }
+
+    const changedFields = [];
+    const fieldLabels = {
+      title: '任务名称',
+      dueDate: '开始时间',
+      endDate: '结束时间',
+      tagIds: '标签',
+      linkUrl: '链接',
+      note: '备注'
+    };
+
+    const formatDateTime = (dateStr) => {
+      if (!dateStr || dateStr === '(空)') return dateStr;
+      const date = new Date(dateStr);
+      const pad = (n) => String(n).padStart(2, '0');
+      return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
+    };
+
+    const isDateField = (key) => key === 'dueDate' || key === 'endDate';
+
+    for (const [key, label] of Object.entries(fieldLabels)) {
+      if (updates[key] !== undefined && updates[key] !== task[key]) {
+        let oldValue = task[key] ?? '(空)';
+        let newValue = updates[key] === '' || updates[key] === null ? '(空)' : updates[key];
+        if (isDateField(key)) {
+          oldValue = formatDateTime(oldValue);
+          newValue = formatDateTime(newValue);
+        }
+        changedFields.push(`${label}: ${oldValue} → ${newValue}`);
+      }
+    }
+
+    if (changedFields.length > 0) {
+      const modification = {
+        id: uuidv4(),
+        reason: modificationReason || '更新任务',
+        changes: changedFields.join('; '),
+        modifiedAt: new Date().toISOString()
+      };
+
+      const existingModifications = task.modifications || [];
+      serialized.modifications = JSON.stringify([...existingModifications, modification]);
+    }
+
     await dbUpdate('tasks', taskId, serialized);
-    const newTasks = tasks.map(t => t.id === taskId ? { ...t, ...updates } : t);
+    const newTasks = tasks.map(t => {
+      if (t.id !== taskId) return t;
+      const updated = { ...t, ...updates };
+      if (serialized.modifications) {
+        updated.modifications = JSON.parse(serialized.modifications);
+      }
+      return updated;
+    });
     setTasks(newTasks);
   }, [tasks]);
 
