@@ -249,7 +249,7 @@ body {
   background-color: var(--primary-lighter);
   border-left: 3px solid var(--primary-color);
   border-radius: var(--radius-md);
-  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), width 0.25s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease-out;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), width 0.15s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.1s ease-out;
   pointer-events: none;
   z-index: 0;
   will-change: transform, width, height;
@@ -563,6 +563,52 @@ body {
 .theme-toggle-btn:hover {
   background-color: var(--bg-hover);
   color: var(--text-primary);
+}
+
+/* ==================== 侧边栏底部操作按钮 ==================== */
+.sidebar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-around;
+  padding: var(--space-lg) var(--space-xl);
+  border-top: 1px solid var(--border-light);
+  gap: var(--space-sm);
+}
+
+.sidebar-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: none;
+  background: var(--bg-tertiary);
+  border-radius: 50%;
+  cursor: pointer;
+  color: var(--text-secondary);
+  transition: all var(--transition-fast);
+  position: relative;
+}
+
+.sidebar-action-btn:hover {
+  background-color: var(--bg-hover);
+  color: var(--text-primary);
+  transform: translateY(-2px);
+}
+
+.sidebar-action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.sidebar-action-btn.syncing {
+  animation: spin 1s linear infinite;
+}
+
+.sidebar-action-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 /* ==================== 主内容区 ==================== */
@@ -1208,6 +1254,24 @@ body {
   transition: all var(--transition-normal);
   border: 1px solid var(--border-light);
   box-shadow: var(--shadow-sm);
+  animation: taskCardDropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-fill-mode: both;
+}
+
+/* 任务卡片落下动画 */
+@keyframes taskCardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.98);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .task-item:hover {
@@ -1239,9 +1303,7 @@ body {
   }
 }
 
-.task-item.completed {
-  opacity: 0.7;
-}
+
 
 .task-item.completed .task-title {
   text-decoration: line-through;
@@ -1342,13 +1404,6 @@ body {
   100% {
     transform: scale(1);
   }
-}
-
-.task-checkbox.checked::after {
-  content: '✓';
-  color: #1A1A2E;
-  font-size: 12px;
-  font-weight: bold;
 }
 
 /* 任务内容 */
@@ -3792,6 +3847,43 @@ datetime-input::-webkit-datetimeale {
   color: var(--text-primary) !important;
 }
 
+/* ==================== Toast UI Editor 表格样式 ==================== */
+.toastui-editor-contents table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 16px 0;
+}
+
+.toastui-editor-contents table th,
+.toastui-editor-contents table td {
+  border: 1px solid var(--border-color);
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.toastui-editor-contents table th {
+  background-color: var(--bg-tertiary);
+  font-weight: 600;
+}
+
+.toastui-editor-contents table tr:hover td {
+  background-color: var(--bg-hover);
+}
+
+/* 暗黑主题下 Toast UI Editor 表格样式 */
+[data-theme="dark"] .toastui-editor-contents table th,
+[data-theme="dark"] .toastui-editor-contents table td {
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .toastui-editor-contents table th {
+  background-color: var(--bg-tertiary);
+}
+
+[data-theme="dark"] .toastui-editor-contents table tr:hover td {
+  background-color: var(--bg-hover);
+}
+
 /* ==================== 响应式 ==================== */
 @media (max-width: 768px) {
   .sidebar {
@@ -5857,4 +5949,112 @@ datetime-input::-webkit-datetimeale {
 
 [data-theme="dark"] .modification-history-header {
   background: linear-gradient(135deg, rgba(13, 124, 102, 0.2) 0%, var(--bg-tertiary) 100%);
+}
+
+/* ==================== 笔记卡片落下动画 ==================== */
+.note-card-wrapper {
+  animation-fill-mode: both;
+}
+
+.note-card-scroll-in {
+  animation: noteCardDropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes noteCardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-60px) scale(0.95);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(8px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ==================== 通用卡片落下动画 ==================== */
+.task-item {
+  animation: taskCardDropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+  animation-fill-mode: both;
+}
+
+@keyframes taskCardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.98);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.01);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 已办页面专用动画 - 从左侧滑入 */
+.task-item.completed.scroll-in {
+  animation: taskCardSlideIn 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes taskCardSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-30px);
+  }
+  100% {
+    opacity: 0.7;
+    transform: translateX(0);
+  }
+}
+
+.task-card {
+  animation-fill-mode: both;
+}
+
+.task-card.scroll-in {
+  animation: tagCardDropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes tagCardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-40px) scale(0.95);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ==================== 首页统计卡片落下动画 ==================== */
+.stat-mini-card {
+  animation-fill-mode: both;
+}
+
+.stat-mini-card.scroll-in.animating {
+  animation: statCardDropIn 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes statCardDropIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-30px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(5px) scale(1.02);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

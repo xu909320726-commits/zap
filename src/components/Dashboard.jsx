@@ -1,7 +1,16 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import Icon from './Icon';
 
-function Dashboard({ tasks, onNavigate, onTaskClick }) {
+function Dashboard({ tasks, onNavigate, onTaskClick, animationKey }) {
+  const [animatedItems, setAnimatedItems] = useState(new Set());
+  
+  // 当 animationKey 变化时，重置动画状态
+  useEffect(() => {
+    if (animationKey !== undefined) {
+      setAnimatedItems(new Set());
+    }
+  }, [animationKey]);
+  
   const now = new Date();
   
   const getGreeting = () => {
@@ -20,39 +29,42 @@ function Dashboard({ tasks, onNavigate, onTaskClick }) {
     today.setHours(0, 0, 0, 0);
 
     const allTasks = tasks || [];
-    const todoTasks = allTasks.filter(t => !t.completed);
-    const doneTasks = allTasks.filter(t => t.completed);
+    let todoCount = 0, doneCount = 0, todayTodo = 0, todayDone = 0, overdue = 0;
     
-    const todayTodoTasks = todoTasks.filter(t => {
-      if (!t.dueDate) return false;
-      const due = new Date(t.dueDate);
-      due.setHours(0, 0, 0, 0);
-      return due.getTime() === today.getTime();
-    });
-
-    const todayDoneTasks = doneTasks.filter(t => {
-      if (!t.dueDate) return false;
-      const due = new Date(t.dueDate);
-      due.setHours(0, 0, 0, 0);
-      return due.getTime() === today.getTime();
-    });
-
-    const overdueTasks = todoTasks.filter(t => {
-      if (!t.dueDate) return false;
-      const due = new Date(t.dueDate);
-      due.setHours(0, 0, 0, 0);
-      return due.getTime() < today.getTime();
-    });
+    for (const t of allTasks) {
+      const isCompleted = t.completed;
+      if (isCompleted) {
+        doneCount++;
+        if (t.dueDate) {
+          const due = new Date(t.dueDate);
+          due.setHours(0, 0, 0, 0);
+          if (due.getTime() === today.getTime()) {
+            todayDone++;
+          }
+        }
+      } else {
+        todoCount++;
+        if (t.dueDate) {
+          const due = new Date(t.dueDate);
+          due.setHours(0, 0, 0, 0);
+          if (due.getTime() === today.getTime()) {
+            todayTodo++;
+          } else if (due.getTime() < today.getTime()) {
+            overdue++;
+          }
+        }
+      }
+    }
 
     const totalTasks = allTasks.length;
-    const completionRate = totalTasks > 0 ? Math.round((doneTasks.length / totalTasks) * 100) : 0;
+    const completionRate = totalTasks > 0 ? Math.round((doneCount / totalTasks) * 100) : 0;
 
     return {
-      todo: todoTasks.length,
-      done: doneTasks.length,
-      todayTodo: todayTodoTasks.length,
-      todayDone: todayDoneTasks.length,
-      overdue: overdueTasks.length,
+      todo: todoCount,
+      done: doneCount,
+      todayTodo,
+      todayDone,
+      overdue,
       total: totalTasks,
       completionRate
     };
@@ -162,45 +174,37 @@ function Dashboard({ tasks, onNavigate, onTaskClick }) {
 
       <div className="dashboard-body">
         <div className="stats-row">
-          <div className="stat-mini-card" onClick={() => onNavigate('todo')}>
-            <div className="stat-mini-icon" style={{ background: 'rgba(13, 124, 102, 0.1)', color: '#0D7C66' }}>
-              <Icon name="circle" size={20} />
-            </div>
-            <div className="stat-mini-info">
-              <span className="stat-mini-value">{stats.todo}</span>
-              <span className="stat-mini-label">待办</span>
-            </div>
-          </div>
-          
-          <div className="stat-mini-card" onClick={() => onNavigate('done')}>
-            <div className="stat-mini-icon" style={{ background: 'rgba(0, 200, 81, 0.1)', color: '#00C851' }}>
-              <Icon name="check-circle" size={20} />
-            </div>
-            <div className="stat-mini-info">
-              <span className="stat-mini-value">{stats.done}</span>
-              <span className="stat-mini-label">已完成</span>
-            </div>
-          </div>
-          
-          <div className="stat-mini-card" onClick={() => onNavigate('calendar')}>
-            <div className="stat-mini-icon" style={{ background: 'rgba(255, 215, 0, 0.1)', color: '#FFD700' }}>
-              <Icon name="calendar" size={20} />
-            </div>
-            <div className="stat-mini-info">
-              <span className="stat-mini-value">{stats.todayTodo}</span>
-              <span className="stat-mini-label">今日待办</span>
-            </div>
-          </div>
-          
-          <div className={`stat-mini-card ${stats.overdue > 0 ? 'has-warning' : ''}`} onClick={() => onNavigate('todo')}>
-            <div className="stat-mini-icon" style={{ background: stats.overdue > 0 ? 'rgba(255, 77, 77, 0.1)' : 'rgba(255, 77, 77, 0.05)', color: '#FF4D4D' }}>
-              <Icon name="alert-triangle" size={20} />
-            </div>
-            <div className="stat-mini-info">
-              <span className="stat-mini-value">{stats.overdue}</span>
-              <span className="stat-mini-label">逾期</span>
-            </div>
-          </div>
+          {['todo', 'done', 'today', 'overdue'].map((type, index) => {
+            const shouldAnimate = animationKey > 0 && !animatedItems.has(type);
+            const statsMap = {
+              todo: { icon: 'circle', color: 'rgba(13, 124, 102, 0.1)', iconColor: '#0D7C66', value: stats.todo, label: '待办', nav: 'todo' },
+              done: { icon: 'check-circle', color: 'rgba(0, 200, 81, 0.1)', iconColor: '#00C851', value: stats.done, label: '已完成', nav: 'done' },
+              today: { icon: 'calendar', color: 'rgba(255, 215, 0, 0.1)', iconColor: '#FFD700', value: stats.todayTodo, label: '今日待办', nav: 'calendar' },
+              overdue: { icon: 'alert-triangle', color: stats.overdue > 0 ? 'rgba(255, 77, 77, 0.1)' : 'rgba(255, 77, 77, 0.05)', iconColor: '#FF4D4D', value: stats.overdue, label: '逾期', nav: 'todo', hasWarning: stats.overdue > 0 }
+            };
+            const config = statsMap[type];
+            return (
+              <div 
+                key={type}
+                className={`stat-mini-card scroll-in ${shouldAnimate ? 'animating' : ''}`}
+                onClick={() => onNavigate(config.nav)}
+                style={{ animationDelay: `${index * 0.1}s` }}
+                onAnimationEnd={() => {
+                  if (shouldAnimate) {
+                    setAnimatedItems(prev => new Set([...prev, type]));
+                  }
+                }}
+              >
+                <div className="stat-mini-icon" style={{ background: config.color, color: config.iconColor }}>
+                  <Icon name={config.icon} size={20} />
+                </div>
+                <div className="stat-mini-info">
+                  <span className="stat-mini-value">{config.value}</span>
+                  <span className="stat-mini-label">{config.label}</span>
+                </div>
+              </div>
+            );
+          })}
         </div>
 
         <div className="dashboard-grid">

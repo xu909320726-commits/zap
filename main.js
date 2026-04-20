@@ -1,4 +1,4 @@
-const { app, BrowserWindow, globalShortcut, ipcMain, shell } = require('electron');
+const { app, BrowserWindow, globalShortcut, ipcMain, shell, safeStorage } = require('electron');
 const path = require('path');
 const Store = require('electron-store');
 
@@ -94,7 +94,12 @@ ipcMain.on('window-close', () => {
 
 ipcMain.on('open-external', (event, url) => {
   if (url) {
-    shell.openExternal(url);
+    try {
+      const parsed = new URL(url);
+      if (['http:', 'https:'].includes(parsed.protocol)) {
+        shell.openExternal(url);
+      }
+    } catch {}
   }
 });
 
@@ -114,6 +119,33 @@ ipcMain.handle('store-set', (event, key, value) => {
 ipcMain.handle('store-delete', (event, key) => {
   store.delete(key);
   return true;
+});
+
+ipcMain.handle('safe-storage-set', (event, key, value) => {
+  try {
+    if (safeStorage.isEncryptionAvailable()) {
+      safeStorage.encryptString(value).then(encrypted => {
+        store.set(key, encrypted);
+      });
+    } else {
+      store.set(key, value);
+    }
+    return true;
+  } catch (error) {
+    return false;
+  }
+});
+
+ipcMain.handle('safe-storage-get', (event, key) => {
+  try {
+    const value = store.get(key);
+    if (safeStorage.isEncryptionAvailable() && value) {
+      return safeStorage.decryptString(value);
+    }
+    return value;
+  } catch (error) {
+    return null;
+  }
 });
 
 app.whenReady().then(() => {

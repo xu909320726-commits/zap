@@ -5,6 +5,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   storeSet: (key, value) => ipcRenderer.invoke('store-set', key, value),
   storeDelete: (key) => ipcRenderer.invoke('store-delete', key),
   
+  safeStorageSet: (key, value) => ipcRenderer.invoke('safe-storage-set', key, value),
+  safeStorageGet: (key) => ipcRenderer.invoke('safe-storage-get', key),
+  
   onShortcut: (callback) => {
     ipcRenderer.on('shortcut', (event, action) => callback(action));
   },

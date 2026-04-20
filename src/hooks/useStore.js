@@ -40,9 +40,10 @@ export function useStore() {
         setTags(parseTasks(tagsData));
         setDeletedTasks(parseTasks(tasksData.filter(t => t.deletedAt)));
       } catch (error) {
-        console.error('加载数据失败:', error);
+        return { success: false, error };
       }
       setIsLoaded(true);
+      return { success: true };
     };
     loadData();
   }, [parseTasks]);
@@ -153,9 +154,8 @@ export function useStore() {
   }, [deletedTasks]);
 
   const emptyTrash = useCallback(async () => {
-    for (const t of deletedTasks) {
-      await dbDelete('tasks', t.id);
-    }
+    if (deletedTasks.length === 0) return;
+    await Promise.all(deletedTasks.map(t => dbDelete('tasks', t.id)));
     setDeletedTasks([]);
   }, [deletedTasks]);
 
@@ -264,17 +264,23 @@ export function useStore() {
   const deleteTag = useCallback(async (tagId) => {
     await dbDelete('tags', tagId);
     const newTags = tags.filter(t => t.id !== tagId);
-    const newTasks = tasks.map(task => ({
-      ...task,
-      tagIds: task.tagIds?.filter(id => id !== tagId) || []
-    }));
-    
-    for (const task of newTasks) {
-      if (task.tagIds.length !== tasks.find(t => t.id === task.id)?.tagIds?.length) {
-        await dbUpdate('tasks', task.id, { tagIds: JSON.stringify(task.tagIds) });
-      }
+    const newTasks = tasks.map(task => {
+      if (!task.tagIds?.includes(tagId)) return task;
+      const newTagIds = task.tagIds.filter(id => id !== tagId);
+      return { ...task, tagIds: newTagIds };
+    });
+
+    const tasksToUpdate = newTasks.filter((newTask, i) => {
+      const originalTask = tasks[i];
+      return JSON.stringify(originalTask?.tagIds) !== JSON.stringify(newTask.tagIds);
+    });
+
+    if (tasksToUpdate.length > 0) {
+      await Promise.all(tasksToUpdate.map(task =>
+        dbUpdate('tasks', task.id, { tagIds: JSON.stringify(task.tagIds) })
+      ));
     }
-    
+
     setTags(newTags);
     setTasks(newTasks);
   }, [tags, tasks]);

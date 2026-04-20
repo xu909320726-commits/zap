@@ -11,6 +11,11 @@ import DeleteReasonModal from './components/DeleteReasonModal';
 import { ToastContainer } from './components/Toast';
 import Dashboard from './components/Dashboard';
 import Tooltip from './components/Tooltip';
+import NotesList from './components/NotesList';
+import NoteEditor from './components/NoteEditor';
+import TokenModal from './components/TokenModal';
+import { dbGetNotes, dbCreateNote, dbUpdateNote, dbSoftDeleteNote } from './database/sqlite';
+import { forceUpload, forceRestore } from './hooks/useCloudSync';
 
 // 菜单配置
 const MENU_CONFIG = {
@@ -36,6 +41,11 @@ const MENU_CONFIG = {
   tags: {
     name: '标签',
     icon: 'tag',
+    children: []
+  },
+  notes: {
+    name: '笔记',
+    icon: 'file-text',
     children: []
   }
 };
@@ -70,11 +80,42 @@ function App() {
   }, [isLoaded]);
 
   const [activeListId, setActiveListId] = useState('home');
+  
+  // 笔记列表动画重置状态
+  const [noteAnimationKey, setNoteAnimationKey] = useState(0);
+  
+  // 任务列表动画重置状态
+  const [taskAnimationKey, setTaskAnimationKey] = useState(0);
+  const [animatedTaskIds, setAnimatedTaskIds] = useState(new Set());
+  
+  // 已办页面独立动画状态
+  const [completedAnimationKey, setCompletedAnimationKey] = useState(0);
+  const [animatedCompletedTaskIds, setAnimatedCompletedTaskIds] = useState(new Set());
+  
+  // 标签列表动画重置状态
+  const [tagAnimationKey, setTagAnimationKey] = useState(0);
+  const [animatedTagIds, setAnimatedTagIds] = useState(new Set());
+  
+  // 首页动画重置状态
+  const [homeAnimationKey, setHomeAnimationKey] = useState(0);
+
+  // 预加载笔记数据，避免首次点击新建笔记时卡顿
+  useEffect(() => {
+    const loadNotes = async () => {
+      const notesData = await dbGetNotes();
+      if (notesData && notesData.length > 0) {
+        setNotes(notesData);
+      }
+    };
+    // 应用启动时异步加载笔记数据
+    loadNotes().catch(console.error);
+  }, []);
   const [quickAddText, setQuickAddText] = useState('');
   
   // 滑动指示器相关
   const menuSectionRef = useRef(null);
   const activeItemRef = useRef('todo');
+  const pendingIndicatorUpdateRef = useRef(null);
   const [indicatorStyle, setIndicatorStyle] = useState({ transform: 'translateX(-100%)', width: '0px', height: '0px', opacity: 0 });
   const menuItemRefs = useRef({});
   const [menuSelectedItems, setMenuSelectedItems] = useState({
@@ -109,11 +150,40 @@ function App() {
   const [deleteReasonModal, setDeleteReasonModal] = useState({ isOpen: false, taskId: null, taskTitle: '' });
   const [modificationHistoryModal, setModificationHistoryModal] = useState({ isOpen: false, taskId: null, taskTitle: '', modifications: [] });
   const [toasts, setToasts] = useState([]);
+  
+  // 笔记相关状态
+  const [notes, setNotes] = useState([]);
+  const [activeNoteId, setActiveNoteId] = useState(null);
+  const [editingNote, setEditingNote] = useState(null);
+  const [noteSearchQuery, setNoteSearchQuery] = useState('');
+  
+  // 云同步相关状态
+  const [isPulling, setIsPulling] = useState(false);
+  const [isPushing, setIsPushing] = useState(false);
+  const [showTokenModal, setShowTokenModal] = useState(false);
+  const [tokenInput, setTokenInput] = useState('');
   const [completedFilterDate, setCompletedFilterDate] = useState(() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   });
   const [completedFilterMode, setCompletedFilterMode] = useState('day'); // 'day' or 'week'
+
+  // 当切换到任务相关页面（待办、已办、垃圾箱）或日期筛选变化时，重置动画
+  useEffect(() => {
+    if (activeListId === 'notes') {
+      setNoteAnimationKey(prev => prev + 1);
+    } else if (activeListId === 'todo' || activeListId === 'done' || activeListId === 'trash') {
+      const newKey = taskAnimationKey + 1;
+      console.log('[动画重置] activeListId:', activeListId, 'oldKey:', taskAnimationKey, 'newKey:', newKey);
+      setTaskAnimationKey(newKey);
+      setAnimatedTaskIds(new Set());
+    } else if (activeListId === 'tags') {
+      setTagAnimationKey(prev => prev + 1);
+      setAnimatedTagIds(new Set());
+    } else if (activeListId === 'home') {
+      setHomeAnimationKey(prev => prev + 1);
+    }
+  }, [activeListId, completedFilterDate, completedFilterMode]);
 
   const searchInputRef = useRef(null);
   const addTaskCardRef = useRef(null);
@@ -145,18 +215,9 @@ function App() {
   useEffect(() => {
     if (isLoaded) {
       activeItemRef.current = activeListId;
-      setTimeout(() => {
-        updateSliderIndicator(activeListId);
-      }, 150);
+      updateSliderIndicator(activeListId);
     }
   }, [isLoaded, activeListId]);
-
-  // 监听 lists 变化，确保自定义列表的指示器正确
-  useEffect(() => {
-    if (isLoaded && lists.length > 0) {
-      setTimeout(() => updateSliderIndicator(activeItemRef.current), 150);
-    }
-  }, [isLoaded, lists]);
 
   // 监听展开菜单变化，收起时隐藏指示器
   useEffect(() => {
@@ -373,15 +434,16 @@ function App() {
     const menuConfig = MENU_CONFIG[listId];
     const isFirstLevelMenu = menuConfig && menuConfig.children && menuConfig.children.length === 0;
     if (isFirstLevelMenu) {
-      requestAnimationFrame(() => {
-        updateSliderIndicator(listId);
-      });
+      updateSliderIndicator(listId);
     }
   };
 
   // 滑动指示器位置更新函数
   const updateSliderIndicator = useCallback((listId) => {
     if (!listId) return;
+    
+    const updateId = Date.now();
+    pendingIndicatorUpdateRef.current = updateId;
     
     const menuSection = menuSectionRef.current;
     if (!menuSection) return;
@@ -401,11 +463,13 @@ function App() {
     // 如果是子菜单，检查父级菜单是否已展开
     if (isChildOfMenu) {
       // 如果是子菜单被选中，不给一级菜单显示背景
-      setIndicatorStyle(prev => ({
-        ...prev,
-        opacity: 0,
-        height: '0px'
-      }));
+      if (pendingIndicatorUpdateRef.current === updateId) {
+        setIndicatorStyle(prev => ({
+          ...prev,
+          opacity: 0,
+          height: '0px'
+        }));
+      }
       return;
     }
     
@@ -422,6 +486,7 @@ function App() {
     if (!targetItem) {
       // 尝试使用 requestAnimationFrame 重试
       requestAnimationFrame(() => {
+        if (pendingIndicatorUpdateRef.current !== updateId) return;
         const retryItem = menuItemRefs.current[targetMenuKey];
         if (retryItem && menuSectionRef.current) {
           positionIndicator(retryItem);
@@ -433,6 +498,8 @@ function App() {
     positionIndicator(targetItem);
     
     function positionIndicator(targetEl) {
+      if (pendingIndicatorUpdateRef.current !== updateId) return;
+      
       const menuSectionRect = menuSection.getBoundingClientRect();
       const itemRect = targetEl.getBoundingClientRect();
       
@@ -442,24 +509,21 @@ function App() {
       const left = itemRect.left - menuSectionRect.left;
       const top = itemRect.top - menuSectionRect.top - menuPaddingTop;
       
-      setIndicatorStyle({
-        transform: `translate(${left}px, ${top}px)`,
-        width: `${itemRect.width}px`,
-        height: `${itemRect.height}px`,
-        opacity: 1
-      });
+      if (pendingIndicatorUpdateRef.current === updateId) {
+        setIndicatorStyle({
+          transform: `translate(${left}px, ${top}px)`,
+          width: `${itemRect.width}px`,
+          height: `${itemRect.height}px`,
+          opacity: 1
+        });
+      }
     }
   }, [expandedMenus]);
 
   // 监听展开菜单变化，重新计算指示器位置
   useEffect(() => {
-    const timer = requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        updateSliderIndicator(activeListId);
-      });
-    });
-    return () => cancelAnimationFrame(timer);
-  }, [expandedMenus, activeListId, updateSliderIndicator]);
+    updateSliderIndicator(activeListId);
+  }, [expandedMenus, activeListId]);
 
   // 搜索任务
   const handleSearch = (e) => {
@@ -566,6 +630,117 @@ function App() {
     });
   };
 
+// 笔记相关操作
+  const handleCreateNote = async () => {
+    // 如果笔记列表为空，先加载笔记
+    if (notes.length === 0) {
+      const notesData = await dbGetNotes();
+      setNotes(notesData);
+    }
+    
+    const newNote = {
+      id: Date.now().toString(),
+      title: '无标题笔记',
+      content: '',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    await dbCreateNote(newNote);
+    setNotes(prev => {
+      // 确保新笔记在列表最前面
+      const exists = prev.some(n => n.id === newNote.id);
+      if (exists) {
+        return prev;
+      }
+      return [newNote, ...prev];
+    });
+    setEditingNote(newNote);
+  };
+
+  const handleSaveNote = async (updatedNote) => {
+    // 检查笔记内容是否为空，如果为空则不保存
+    if (!updatedNote.title && !updatedNote.content) {
+      showToast('笔记内容不能为空', 'warning');
+      return;
+    }
+    
+    // 如果标题为空，设置为默认值
+    const noteToSave = {
+      ...updatedNote,
+      title: updatedNote.title || '无标题笔记',
+      updatedAt: new Date().toISOString()
+    };
+    
+    await dbUpdateNote(noteToSave.id, noteToSave);
+    
+    // 更新或添加笔记到列表
+    setNotes(prev => {
+      const existsIndex = prev.findIndex(n => n.id === noteToSave.id);
+      if (existsIndex !== -1) {
+        // 更新现有笔记
+        return prev.map(n => n.id === noteToSave.id ? noteToSave : n);
+      } else {
+        // 添加新笔记到列表最前面
+        return [noteToSave, ...prev];
+      }
+    });
+    showToast('笔记已保存');
+  };
+
+  const handleDeleteNote = async (noteId) => {
+    await dbSoftDeleteNote(noteId);
+    setNotes(prev => prev.filter(n => n.id !== noteId));
+    showToast('笔记已删除');
+  };
+
+  // 云同步操作
+  const handlePull = async () => {
+    // 先检查是否有 GitHub Token
+    const { hasGistToken } = await import('./services/cloudBackup');
+    if (!hasGistToken()) {
+      setShowTokenModal(true);
+      showToast('请先配置 GitHub Token', 'warning');
+      return;
+    }
+    setIsPulling(true);
+    try {
+      const result = await forceRestore();
+      if (result.success) {
+        showToast('数据已恢复');
+        window.location.reload();
+      } else {
+        showToast(result.message || '恢复失败', 'error');
+      }
+    } catch (error) {
+      showToast('恢复失败: ' + error.message, 'error');
+    } finally {
+      setIsPulling(false);
+    }
+  };
+
+  const handlePush = async () => {
+    // 先检查是否有 GitHub Token
+    const { hasGistToken } = await import('./services/cloudBackup');
+    if (!hasGistToken()) {
+      setShowTokenModal(true);
+      showToast('请先配置 GitHub Token', 'warning');
+      return;
+    }
+    setIsPushing(true);
+    try {
+      const result = await forceUpload();
+      if (result.success) {
+        showToast('数据已上传');
+      } else {
+        showToast(result.message || '上传失败', 'error');
+      }
+    } catch (error) {
+      showToast('上传失败: ' + error.message, 'error');
+    } finally {
+      setIsPushing(false);
+    }
+  };
+
   // 检查任务是否过期
   const isOverdue = (task) => {
     if (!task.dueDate || task.completed) return false;
@@ -640,6 +815,7 @@ function App() {
   const isTagsView = activeListId === 'tags';
   const isTrashView = activeListId === 'trash';
   const isHomeView = activeListId === 'home';
+  const isNotesView = activeListId === 'notes';
 
   if (!isLoaded) {
     return (
@@ -747,13 +923,36 @@ function App() {
         ))}
       </div>
 
-      <div className="theme-toggle">
+      <div className="sidebar-footer">
         <button 
-          className="theme-toggle-btn"
+          className={`sidebar-action-btn ${isPulling ? 'syncing' : ''}`}
+          onClick={handlePull}
+          title="从云端恢复"
+          disabled={isPulling || isPushing}
+        >
+          <Icon name="cloud-download" />
+        </button>
+        <button 
+          className={`sidebar-action-btn ${isPushing ? 'syncing' : ''}`}
+          onClick={handlePush}
+          title="上传到云端"
+          disabled={isPulling || isPushing}
+        >
+          <Icon name="cloud-upload" />
+        </button>
+        <button 
+          className="sidebar-action-btn"
+          onClick={() => setShowTokenModal(true)}
+          title="设置"
+        >
+          <Icon name="settings" />
+        </button>
+        <button 
+          className="sidebar-action-btn"
           onClick={toggleTheme}
+          title={theme === 'light' ? '暗色模式' : (theme === 'dark' ? '浅色模式' : '跟随系统')}
         >
           <Icon name={theme === 'light' ? 'moon' : (theme === 'dark' ? 'sun' : 'monitor')} />
-          <span>{theme === 'light' ? '暗色模式' : (theme === 'dark' ? '浅色模式' : '跟随系统')}</span>
         </button>
       </div>
     </div>
@@ -761,7 +960,7 @@ function App() {
 
   // 渲染任务列表
   const renderTaskList = () => (
-    <div className="task-list">
+    <div className="task-list" key={`task-list-${activeListId}-${taskAnimationKey}`}>
       {activeListId === 'done' && (
         <div className="task-list-header">
           <div className="completed-filter">
@@ -849,15 +1048,19 @@ function App() {
               </span>
             </div>
           )}
-          {sortedTasks.map(task => (
-            <div
-              key={task.id}
-              className={`task-item ${task.completed ? 'completed' : ''} ${selectedTaskId === task.id ? 'selected' : ''} ${highlightedTaskId === task.id ? 'highlighted' : ''} ${animatingTaskId === task.id ? 'animating-out' : ''}`}
-              onClick={() => {
-                setSelectedTaskId(task.id);
-                setHighlightedTaskId(null);
-              }}
-            >
+          {console.log('Rendering tasks, activeListId:', activeListId, 'count:', sortedTasks.length, 'taskAnimationKey:', taskAnimationKey, 'animatedTaskIds.size:', animatedTaskIds.size)}
+          {sortedTasks.map((task, index) => (
+              <div
+                key={task.id}
+                className={`task-item ${task.completed ? 'completed' : ''} ${selectedTaskId === task.id ? 'selected' : ''} ${highlightedTaskId === task.id ? 'highlighted' : ''} ${animatingTaskId === task.id ? 'animating-out' : ''}`}
+                onClick={() => {
+                  setSelectedTaskId(task.id);
+                  setHighlightedTaskId(null);
+                }}
+                style={{
+                  animationDelay: `${index * 0.05}s`
+                }}
+              >
               <div 
                 className={`task-checkbox ${task.completed ? 'checked' : ''}`}
                 onClick={(e) => {
@@ -1284,16 +1487,25 @@ function App() {
             </div>
           ) : (
             <div className="task-grid">
-              {tags.map(tag => (
-                <div 
-                  key={tag.id} 
-                  className={`task-card ${highlightedTagId === tag.id ? 'highlighted' : ''}`}
-                  onClick={() => {
-                    if (highlightedTagId === tag.id) {
-                      setHighlightedTagId(null);
-                    }
-                  }}
-                >
+              {tags.map((tag, index) => {
+                const hasAnimated = animatedTagIds.has(tag.id);
+                const shouldAnimate = !hasAnimated && tagAnimationKey > 0;
+                return (
+                  <div 
+                    key={tag.id} 
+                    className={`task-card ${highlightedTagId === tag.id ? 'highlighted' : ''} ${shouldAnimate ? 'scroll-in' : ''}`}
+                    style={{ animationDelay: shouldAnimate ? `${index * 0.08}s` : undefined }}
+                    onClick={() => {
+                      if (highlightedTagId === tag.id) {
+                        setHighlightedTagId(null);
+                      }
+                    }}
+                    onAnimationEnd={() => {
+                      if (shouldAnimate) {
+                        setAnimatedTagIds(prev => new Set([...prev, tag.id]));
+                      }
+                    }}
+                  >
                   <div className="task-card-header">
                     <span className="tag-color-dot" style={{ backgroundColor: tag.color }}></span>
                     <span className="task-card-title">{tag.name}</span>
@@ -1315,7 +1527,8 @@ function App() {
                     </div>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
@@ -1416,6 +1629,17 @@ function App() {
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <TokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={() => {
+            setShowTokenModal(false);
+            setTokenInput('');
+          }}
+          tokenInput={tokenInput}
+          setTokenInput={setTokenInput}
+          showToast={showToast}
+        />
       </div>
     );
   }
@@ -1474,11 +1698,20 @@ function App() {
                     {deletedTasks.length} 个已删除任务
                   </span>
                 </div>
-                {[...deletedTasks].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt)).map(task => (
-                  <div
-                    key={task.id}
-                    className="task-item"
-                  >
+                {[...deletedTasks].sort((a, b) => new Date(b.deletedAt) - new Date(a.deletedAt)).map((task, index) => {
+                  const hasAnimated = animatedTaskIds.has(task.id);
+                  const shouldAnimate = !hasAnimated && taskAnimationKey > 0;
+                  return (
+                    <div
+                      key={task.id}
+                      className={`task-item ${shouldAnimate ? 'scroll-in' : ''}`}
+                      style={{ animationDelay: shouldAnimate ? `${index * 0.05}s` : undefined }}
+                      onAnimationEnd={() => {
+                        if (shouldAnimate) {
+                          setAnimatedTaskIds(prev => new Set([...prev, task.id]));
+                        }
+                      }}
+                    >
                     <div className="task-checkbox" style={{ backgroundColor: 'var(--bg-tertiary)', cursor: 'default' }}>
                       <Icon name="trash-2" size={12} />
                     </div>
@@ -1556,7 +1789,8 @@ function App() {
                       </button>
                     </div>
                   </div>
-                ))}
+                );
+              })}
               </>
             )}
           </div>
@@ -1601,6 +1835,17 @@ function App() {
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <TokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={() => {
+            setShowTokenModal(false);
+            setTokenInput('');
+          }}
+          tokenInput={tokenInput}
+          setTokenInput={setTokenInput}
+          showToast={showToast}
+        />
       </div>
     );
   }
@@ -1627,6 +1872,7 @@ function App() {
         <div className="main-content dashboard-view">
           <Dashboard
             tasks={tasks}
+            animationKey={homeAnimationKey}
             onNavigate={handleDashboardNavigate}
             onTaskClick={handleDashboardTaskClick}
           />
@@ -1671,6 +1917,99 @@ function App() {
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <TokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={() => {
+            setShowTokenModal(false);
+            setTokenInput('');
+          }}
+          tokenInput={tokenInput}
+          setTokenInput={setTokenInput}
+          showToast={showToast}
+        />
+      </div>
+    );
+  }
+
+  // 笔记视图
+  if (isNotesView) {
+    return (
+      <div className="app">
+        {renderSidebar()}
+        <div className="main-content notes-view">
+          <NotesList
+            notes={notes}
+            animationKey={noteAnimationKey}
+            onSelectNote={(note) => {
+              setActiveNoteId(note.id);
+              setEditingNote(note);
+            }}
+            onDeleteNote={handleDeleteNote}
+            onNewNote={handleCreateNote}
+            searchQuery={noteSearchQuery}
+            onSearchChange={setNoteSearchQuery}
+          />
+        </div>
+        {editingNote && (
+          <NoteEditor
+            note={editingNote}
+            onSave={handleSaveNote}
+            onClose={() => { setActiveNoteId(null); setEditingNote(null); }}
+            isNew={!editingNote.title && !editingNote.content}
+          />
+        )}
+        <GlobalSearch
+          isOpen={isSearchOpen}
+          onClose={closeSearch}
+          tasks={tasks}
+          lists={lists}
+          tags={tags}
+          deletedTasks={deletedTasks}
+          onSelectTask={({ task, listId, type, tagId }) => {
+            if (type === 'tag') {
+              setActiveListId('tags');
+              setHighlightedTagId(tagId);
+              setTimeout(() => updateSliderIndicator('tags'), 0);
+            } else if (type === 'trash') {
+              setActiveListId('trash');
+              setTimeout(() => updateSliderIndicator('trash'), 0);
+            } else {
+              setActiveListId(listId);
+              if (task) {
+                setSelectedTaskId(task.id);
+                if ((type === 'calendar' || type === 'done' || type === 'todo') && task.dueDate) {
+                  setHighlightedTaskId(task.id);
+                } else if (type === 'todo') {
+                  setHighlightedTaskId(task.id);
+                }
+              }
+              setTimeout(() => updateSliderIndicator(listId), 0);
+            }
+            setEditingTask(null);
+            closeSearch();
+          }}
+        />
+        <ConfirmModal
+          isOpen={confirmModal.isOpen}
+          title={confirmModal.title}
+          message={confirmModal.message}
+          danger={confirmModal.danger}
+          onConfirm={confirmModal.onConfirm}
+          onCancel={() => setConfirmModal({ isOpen: false })}
+        />
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <TokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={() => {
+            setShowTokenModal(false);
+            setTokenInput('');
+          }}
+          tokenInput={tokenInput}
+          setTokenInput={setTokenInput}
+          showToast={showToast}
+        />
       </div>
     );
   }
@@ -1723,6 +2062,17 @@ function App() {
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
         <ToastContainer toasts={toasts} removeToast={removeToast} />
+        <TokenModal
+          isOpen={showTokenModal}
+          onClose={() => setShowTokenModal(false)}
+          onSave={() => {
+            setShowTokenModal(false);
+            setTokenInput('');
+          }}
+          tokenInput={tokenInput}
+          setTokenInput={setTokenInput}
+          showToast={showToast}
+        />
       </div>
     );
   }
@@ -1832,6 +2182,17 @@ function App() {
         </div>
       )}
       <ToastContainer toasts={toasts} removeToast={removeToast} />
+      <TokenModal
+        isOpen={showTokenModal}
+        onClose={() => setShowTokenModal(false)}
+        onSave={() => {
+          setShowTokenModal(false);
+          setTokenInput('');
+        }}
+        tokenInput={tokenInput}
+        setTokenInput={setTokenInput}
+        showToast={showToast}
+      />
     </div>
   );
 }
