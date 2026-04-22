@@ -167,7 +167,7 @@ function GlobalSearch({ isOpen, onClose, tasks, lists, tags, deletedTasks = [], 
 
   // 关键词高亮
   const highlightMatch = (text) => {
-    if (!query.trim()) return text;
+    if (!query.trim() || !text) return text || '';
     const parts = text.split(new RegExp(`(${query.trim()})`, 'gi'));
     return parts.map((part, i) => 
       part.toLowerCase() === query.trim().toLowerCase() 
@@ -239,7 +239,7 @@ function GlobalSearch({ isOpen, onClose, tasks, lists, tags, deletedTasks = [], 
                     <span className="result-title">{highlightMatch(item.title)}</span>
                     <div className="result-meta">
                       <span className="result-list">{highlightMatch(item.listName)}</span>
-                      {item.taskTags.length > 0 && (
+                      {item.taskTags && item.taskTags.length > 0 && (
                         <div className="result-tags">
                           {item.taskTags.map(tag => (
                             <span

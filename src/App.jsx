@@ -819,9 +819,12 @@ function App() {
 
   if (!isLoaded) {
     return (
-      <div className="app" style={{ justifyContent: 'center', alignItems: 'center' }}>
-        <span>加载中...</span>
-      </div>
+      <>
+        <div className="app" style={{ justifyContent: 'center', alignItems: 'center' }}>
+          <span>加载中...</span>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
@@ -1467,17 +1470,16 @@ function App() {
           </div>
         </div>
       )}
-
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
     </>
   );
 
   // 标签视图 - 管理所有标签
   if (isTagsView) {
     return (
-      <div className="app">
-        {renderSidebar()}
-        <div className="main-content tags-view">
+      <>
+        <div className="app">
+          {renderSidebar()}
+          <div className="main-content tags-view">
           <div className="tags-header">
             <h2 className="tags-title">标签管理</h2>
             <button className="btn btn-primary" onClick={() => openTagModal()}>
@@ -1637,7 +1639,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
+
         <TokenModal
           isOpen={showTokenModal}
           onClose={() => setShowTokenModal(false)}
@@ -1649,7 +1651,9 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
-      </div>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
@@ -1662,9 +1666,10 @@ function App() {
     };
 
     return (
-      <div className="app">
-        {renderSidebar()}
-        <div className="main-content trash-view">
+      <>
+        <div className="app">
+          {renderSidebar()}
+          <div className="main-content trash-view">
           <div className="content-header">
             <div className="header-top">
               <h2 className="content-title">垃圾箱</h2>
@@ -1851,7 +1856,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
+
         <TokenModal
           isOpen={showTokenModal}
           onClose={() => setShowTokenModal(false)}
@@ -1863,7 +1868,9 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
-      </div>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
@@ -1884,9 +1891,10 @@ function App() {
     };
 
     return (
-      <div className="app">
-        {renderSidebar()}
-        <div className="main-content dashboard-view">
+      <>
+        <div className="app">
+          {renderSidebar()}
+          <div className="main-content dashboard-view">
           <Dashboard
             tasks={tasks}
             animationKey={homeAnimationKey}
@@ -1933,7 +1941,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
+
         <TokenModal
           isOpen={showTokenModal}
           onClose={() => setShowTokenModal(false)}
@@ -1945,16 +1953,19 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
-      </div>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
   // 笔记视图
   if (isNotesView) {
     return (
-      <div className="app">
-        {renderSidebar()}
-        <div className="main-content notes-view">
+      <>
+        <div className="app">
+          {renderSidebar()}
+          <div className="main-content notes-view">
           <NotesList
             notes={notes}
             animationKey={noteAnimationKey}
@@ -2015,7 +2026,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
+
         <TokenModal
           isOpen={showTokenModal}
           onClose={() => setShowTokenModal(false)}
@@ -2027,16 +2038,19 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
-      </div>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
   // 日历视图
   if (isCalendarView) {
     return (
-      <div className="app">
-        {renderSidebar()}
-        <div className="main-content calendar-view">
+      <>
+        <div className="app">
+          {renderSidebar()}
+          <div className="main-content calendar-view">
           <Calendar highlightedTaskId={highlightedTaskId} showToast={showToast} />
         </div>
         <GlobalSearch
@@ -2078,7 +2092,7 @@ function App() {
           onConfirm={confirmModal.onConfirm}
           onCancel={() => setConfirmModal({ isOpen: false })}
         />
-        <ToastContainer toasts={toasts} removeToast={removeToast} />
+
         <TokenModal
           isOpen={showTokenModal}
           onClose={() => setShowTokenModal(false)}
@@ -2090,15 +2104,18 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
-      </div>
+        </div>
+        <ToastContainer toasts={toasts} removeToast={removeToast} />
+      </>
     );
   }
 
   // 任务列表视图
   return (
-    <div className="app">
-      {renderSidebar()}
-      <div className="main-content">
+    <>
+      <div className="app">
+        {renderSidebar()}
+        <div className="main-content">
         {renderMainContent()}
       </div>
 
@@ -2198,7 +2215,6 @@ function App() {
           </div>
         </div>
       )}
-      <ToastContainer toasts={toasts} removeToast={removeToast} />
       <TokenModal
         isOpen={showTokenModal}
         onClose={() => setShowTokenModal(false)}
@@ -2210,7 +2226,9 @@ function App() {
         setTokenInput={setTokenInput}
         showToast={showToast}
       />
-    </div>
+      </div>
+      <ToastContainer toasts={toasts} removeToast={removeToast} />
+    </>
   );
 }
 
