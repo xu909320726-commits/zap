@@ -2510,59 +2510,81 @@ body {
   z-index: 2000;
   display: flex;
   flex-direction: column;
-  gap: var(--space-md);
+  gap: 12px;
 }
 
 .toast {
   display: flex;
   align-items: center;
-  gap: var(--space-md);
-  padding: var(--space-md) var(--space-xl);
+  gap: 16px;
+  padding: 16px 20px;
   background-color: var(--bg-primary);
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
+  border-radius: 12px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
-  border-left: 4px solid var(--primary-color);
-  min-width: 240px;
+  min-width: 280px;
   max-width: 400px;
+  transition: all 0.3s ease;
+  border: 1px solid var(--border-color);
+}
+
+.toast:hover {
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.2);
+  transform: translateY(-2px);
 }
 
 .toast-success {
-  border-left-color: var(--success-color);
+  background-color: rgba(16, 185, 129, 0.05);
+  border-color: rgba(16, 185, 129, 0.2);
 }
 
 .toast-success svg {
-  color: var(--success-color);
+  color: #10b981;
+  background-color: rgba(16, 185, 129, 0.1);
+  padding: 6px;
+  border-radius: 50%;
 }
 
 .toast-error {
-  border-left-color: var(--danger-color);
+  background-color: rgba(239, 68, 68, 0.05);
+  border-color: rgba(239, 68, 68, 0.2);
 }
 
 .toast-error svg {
-  color: var(--danger-color);
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.1);
+  padding: 6px;
+  border-radius: 50%;
 }
 
 .toast-warning {
-  border-left-color: var(--warning-color);
+  background-color: rgba(245, 158, 11, 0.05);
+  border-color: rgba(245, 158, 11, 0.2);
 }
 
 .toast-warning svg {
-  color: var(--warning-color);
+  color: #f59e0b;
+  background-color: rgba(245, 158, 11, 0.1);
+  padding: 6px;
+  border-radius: 50%;
 }
 
 .toast-info {
-  border-left-color: var(--info-color);
+  background-color: rgba(59, 130, 246, 0.05);
+  border-color: rgba(59, 130, 246, 0.2);
 }
 
 .toast-info svg {
-  color: var(--info-color);
+  color: #3b82f6;
+  background-color: rgba(59, 130, 246, 0.1);
+  padding: 6px;
+  border-radius: 50%;
 }
 
 .toast-show {
-  animation: toastSlideIn 0.3s ease-out forwards;
+  animation: toastSlideIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .toast-hide {
@@ -2572,23 +2594,49 @@ body {
 @keyframes toastSlideIn {
   from {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(100%) translateY(-20px);
   }
   to {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) translateY(0);
   }
 }
 
 @keyframes toastSlideOut {
   from {
     opacity: 1;
-    transform: translateX(0);
+    transform: translateX(0) translateY(0);
   }
   to {
     opacity: 0;
-    transform: translateX(100%);
+    transform: translateX(100%) translateY(-20px);
   }
+}
+
+/* 暗黑主题适配 */
+[data-theme="dark"] .toast {
+  background-color: var(--bg-secondary);
+  border-color: var(--border-color);
+}
+
+[data-theme="dark"] .toast-success {
+  background-color: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+}
+
+[data-theme="dark"] .toast-error {
+  background-color: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+[data-theme="dark"] .toast-warning {
+  background-color: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+[data-theme="dark"] .toast-info {
+  background-color: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
 }
 
 /* ==================== 模态框 ==================== */

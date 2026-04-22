@@ -1,6 +1,6 @@
 {
   "name": "zap-app",
-  "version": "2026.04.20.1209",
+  "version": "2026.04.22.1120",
   "description": "Zap - 闪电般快速的待办事项应用",
   "main": "main.js",
   "scripts": {

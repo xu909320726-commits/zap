@@ -1076,7 +1076,16 @@ function App() {
               />
               
               <div className="task-content">
-                <div className="task-title">{task.title}</div>
+                <div className="task-title" onClick={(e) => {
+                  e.stopPropagation();
+                  if (task.linkUrl) {
+                    navigator.clipboard.writeText(task.linkUrl).then(() => {
+                      showToast('链接已复制', 'success');
+                    }).catch(err => {
+                      console.error('复制链接失败:', err);
+                    });
+                  }
+                }}>{task.title}</div>
                 {(task.dueDate || (task.tagIds && task.tagIds.length > 0) || task.linkUrl || task.note) && (
                   <div className="task-meta">
                     {task.dueDate && (
@@ -1717,7 +1726,15 @@ function App() {
                     </div>
                     
                     <div className="task-content">
-                      <div className="task-title">{task.title}</div>
+                      <div className="task-title" onClick={() => {
+                        if (task.linkUrl) {
+                          navigator.clipboard.writeText(task.linkUrl).then(() => {
+                            showToast('链接已复制', 'success');
+                          }).catch(err => {
+                            console.error('复制链接失败:', err);
+                          });
+                        }
+                      }}>{task.title}</div>
                       <div className="task-meta">
                         <span className="task-due-date">
                           <Icon name="calendar" size={12} />

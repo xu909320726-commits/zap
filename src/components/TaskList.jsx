@@ -84,6 +84,18 @@ function TaskList({
                 <div 
                   className="task-title"
                   onDoubleClick={() => handleEditStart(task)}
+                  onClick={() => {
+                    if (task.linkUrl) {
+                      navigator.clipboard.writeText(task.linkUrl).then(() => {
+                        // 显示toast提示
+                        if (window.showToast) {
+                          window.showToast('链接已复制', 'success');
+                        }
+                      }).catch(err => {
+                        console.error('复制链接失败:', err);
+                      });
+                    }
+                  }}
                 >
                   {task.title}
                 </div>
