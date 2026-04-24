@@ -109,11 +109,11 @@ function Sidebar({
   }, [onToggleMenu]);
 
   return (
-    <div className="sidebar" style={{ backgroundColor: isDarkTheme ? '#1e1e1e' : '#f5f5f5' }}>
+    <div className="sidebar">
       <div className="sidebar-header" onClick={() => handleListClick('home')}>
         <h1 className="sidebar-title">
           <Icon name="zap" className="sidebar-title-icon" />
-          Zap
+          <span>Zap</span>
         </h1>
       </div>
       
@@ -131,7 +131,7 @@ function Sidebar({
           <div key={menuKey} className="menu-group">
             <div 
               ref={el => menuItemRefs.current[menuKey] = el}
-              className={`menu-item ${menu.children.length > 0 ? 'has-children' : ''} ${menu.children.length > 0 ? (expandedMenus.includes(menuKey) ? 'active' : '') : (activeListId === menuKey ? 'active' : '')}`}
+              className={`menu-item ${menu.children.length > 0 ? 'has-children' : ''} ${menu.children.length > 0 ? ((expandedMenus.includes(menuKey) || menu.children.some(child => child.id === activeListId) || (menuKey === 'task' && lists.some(list => list.id === activeListId && !list.isDefault))) ? 'active' : '' : (activeListId === menuKey ? 'active' : '')}`}
               onClick={() => {
                 if (menu.children.length > 0) {
                   toggleMenu(menuKey);
@@ -144,7 +144,7 @@ function Sidebar({
               <span className="menu-name">{menu.name}</span>
               {menu.children.length > 0 && (
                 <span className={`menu-arrow ${expandedMenus.includes(menuKey) ? 'expanded' : ''}`}>
-                  ›
+                  <Icon name="chevron-down" size={16} />
                 </span>
               )}
             </div>
@@ -206,7 +206,7 @@ function Sidebar({
           title="从云端拉取"
           disabled={isPulling || isPushing}
         >
-          <Icon name="cloud-download" />
+          <Icon name="cloud-download" size={18} />
         </button>
         <button 
           className={`sidebar-action-btn ${isPushing ? 'syncing' : ''}`}
@@ -214,21 +214,21 @@ function Sidebar({
           title="上传到云端"
           disabled={isPulling || isPushing}
         >
-          <Icon name="cloud-upload" />
+          <Icon name="cloud-upload" size={18} />
         </button>
         <button 
           className="sidebar-action-btn"
           onClick={onShowTokenModal}
           title="设置"
         >
-          <Icon name="settings" />
+          <Icon name="settings" size={18} />
         </button>
         <button 
           className="sidebar-action-btn"
           onClick={onToggleTheme}
           title={theme === 'light' ? '暗色模式' : (theme === 'dark' ? '浅色模式' : '跟随系统')}
         >
-          <Icon name={theme === 'light' ? 'moon' : (theme === 'dark' ? 'sun' : 'monitor')} />
+          <Icon name={theme === 'light' ? 'moon' : (theme === 'dark' ? 'sun' : 'monitor')} size={18} />
         </button>
       </div>
     </div>

@@ -179,6 +179,7 @@ export default function NotesList({ notes, onSelectNote, onDeleteNote, onNewNote
   const [deletingCardId, setDeletingCardId] = useState(null);
   const [animatedCardIds, setAnimatedCardIds] = useState(new Set());
   const [columns, setColumns] = useState(4);
+  const [viewModeAnimationKey, setViewModeAnimationKey] = useState(0);
   const cardRefs = useRef({});
   
   useEffect(() => {
@@ -318,29 +319,43 @@ export default function NotesList({ notes, onSelectNote, onDeleteNote, onNewNote
               </button>
             )}
           </div>
-          <div style={{ display: 'flex', gap: '4px', padding: '4px', borderRadius: '12px' }}>
+          <div style={{ display: 'flex', gap: '4px', padding: '4px', borderRadius: '12px', background: 'var(--bg-tertiary)', transition: 'all 0.3s ease' }}>
             <button
-              onClick={() => setViewMode('grid')}
+              onClick={() => {
+                setViewMode('grid');
+                setViewModeAnimationKey(prev => prev + 1);
+                setAnimatedCardIds(new Set());
+              }}
               style={{
                 padding: '10px 14px',
                 borderRadius: '8px',
                 border: 'none',
                 background: viewMode === 'grid' ? 'var(--primary-color)' : 'transparent',
                 color: viewMode === 'grid' ? '#fff' : 'var(--text-secondary)',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                transform: viewMode === 'grid' ? 'translateY(-1px)' : 'translateY(0)',
+                boxShadow: viewMode === 'grid' ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
               }}
             >
               <Icon name="grid" />
             </button>
             <button
-              onClick={() => setViewMode('list')}
+              onClick={() => {
+                setViewMode('list');
+                setViewModeAnimationKey(prev => prev + 1);
+                setAnimatedCardIds(new Set());
+              }}
               style={{
                 padding: '10px 14px',
                 borderRadius: '8px',
                 border: 'none',
                 background: viewMode === 'list' ? 'var(--primary-color)' : 'transparent',
                 color: viewMode === 'list' ? '#fff' : 'var(--text-secondary)',
-                cursor: 'pointer'
+                cursor: 'pointer',
+                transition: 'all 0.3s ease',
+                transform: viewMode === 'list' ? 'translateY(-1px)' : 'translateY(0)',
+                boxShadow: viewMode === 'list' ? '0 2px 8px rgba(0,0,0,0.15)' : 'none'
               }}
             >
               <Icon name="list" />
@@ -350,160 +365,162 @@ export default function NotesList({ notes, onSelectNote, onDeleteNote, onNewNote
       </div>
 
       <div style={{ flex: 1, overflow: 'auto', position: 'relative', background: 'transparent' }}>
-        {viewMode === 'grid' ? (
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', overflow: 'visible' }}>
-            {columnData.map((col, colIndex) => (
-              <div key={colIndex} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'visible', padding: '15px 5px 0 5px', transition: 'flex 0.3s ease' }}>
-                {colIndex === 0 && (
-                  <div ref={el => cardRefs.current['__new__'] = el} style={{ marginBottom: '8px' }} className="note-card-wrapper">
-                    <NoteCard
-                      note={{ id: '__new__', title: '', content: '', updatedAt: new Date().toISOString() }}
-                      onOpen={onNewNote}
-                      onDelete={() => {}}
-                      onDeleteWithAnimation={() => {}}
-                      isNew={true}
-                    />
-                  </div>
-                )}
-                {col.map((note, noteIndex) => {
-                  const globalIndex = colIndex * col.length + noteIndex;
-                  const isDeleting = deletingCardId === note.id;
-                  const hasAnimated = animatedCardIds.has(note.id);
-                  const isNewCard = !hasAnimated && !isDeleting;
-                  return (
-                    <div 
-                      key={note.id} 
-                      ref={el => cardRefs.current[note.id] = el} 
-                      style={{ 
-                        overflow: 'visible', 
-                        zIndex: 1, 
-                        '--card-index': globalIndex
-                      }} 
-                      className={`note-card-wrapper${isDeleting ? ' note-card-delete' : ''}${isNewCard ? ' note-card-scroll-in' : ''}`} 
-                      onAnimationEnd={() => setAnimatedCardIds(prev => new Set([...prev, note.id]))}
-                    >
+        <div key={viewModeAnimationKey} style={{ transition: 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)', opacity: 1, transform: 'translateY(0)' }}>
+          {viewMode === 'grid' ? (
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'flex-start', overflow: 'visible' }}>
+              {columnData.map((col, colIndex) => (
+                <div key={colIndex} style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '16px', overflow: 'visible', padding: '15px 5px 0 5px', transition: 'flex 0.3s ease' }}>
+                  {colIndex === 0 && (
+                    <div ref={el => cardRefs.current['__new__'] = el} style={{ marginBottom: '8px' }} className="note-card-wrapper">
                       <NoteCard
-                        note={note}
-                        onOpen={() => !isDeleting && onSelectNote(note)}
-                        onDelete={() => handleDeleteWithAnimation(note.id)}
-                        onDeleteWithAnimation={handleDeleteWithAnimation}
-                        isNew={false}
+                        note={{ id: '__new__', title: '', content: '', updatedAt: new Date().toISOString() }}
+                        onOpen={onNewNote}
+                        onDelete={() => {}}
+                        onDeleteWithAnimation={() => {}}
+                        isNew={true}
                       />
                     </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div>
-            <div 
-              onClick={onNewNote}
-              style={getListItemStyle()}
-              ref={el => cardRefs.current['__new__'] = el}
-              onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-2px)';
-                e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.transform = 'translateY(0)';
-                e.currentTarget.style.boxShadow = 'none';
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{ 
-                  width: '44px', 
-                  height: '44px', 
-                  borderRadius: '12px',
-                  background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
-                }}>
-                  <Icon name="plus" style={{ width: 22, height: 22, color: '#fff' }} />
-                </div>
-                <span style={{ fontSize: '15px', color: 'var(--text-secondary)', fontWeight: '500' }}>新建笔记</span>
-              </div>
-            </div>
-            {filteredNotes.map((note, index) => {
-              const isDeleting = deletingCardId === note.id;
-              const hasAnimated = animatedCardIds.has(note.id);
-              const isNewCard = !hasAnimated && !isDeleting;
-              return (
-                <div 
-                  key={note.id} 
-                  ref={el => cardRefs.current[note.id] = el}
-                  onClick={() => !isDeleting && onSelectNote(note)}
-                  style={getListItemStyle()}
-                  className={`note-card-wrapper${isDeleting ? ' note-card-delete' : ''}${isNewCard ? ' note-card-scroll-in' : ''}`}
-                  onAnimationEnd={() => setAnimatedCardIds(prev => new Set([...prev, note.id]))}
-                  onMouseEnter={(e) => {
-                    if (!isDeleting) {
-                      e.currentTarget.style.transform = 'translateY(-2px)';
-                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
-                    }
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = 'none';
-                  }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                    <div style={{ 
-                      width: '44px', 
-                      height: '44px', 
-                      borderRadius: '12px',
-                      background: getGradient(note.title || note.content || note.id),
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      flexShrink: 0
-                    }}>
-                      <Icon name="file-text" style={{ width: 20, height: 20, color: '#fff' }} />
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                        {note.title || '无标题'}
-                      </h3>
-                      <p style={{ 
-                        margin: 0, 
-                        fontSize: '13px', 
-                        color: 'var(--text-secondary)',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap'
-                      }}>
-                        {getPlainText(note.content) || '空白笔记'}
-                      </p>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                      <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
-                        {formatRelativeTime(note.updatedAt)}
-                      </span>
-                      <button
-                        onClick={(e) => { e.stopPropagation(); handleDeleteWithAnimation(note.id); }}
-                        style={{
-                          background: 'none',
-                          border: 'none',
-                          cursor: 'pointer',
-                          color: 'aliceblue',
-                          padding: '4px',
-                          opacity: 0.5,
-                          transition: 'opacity 0.2s'
-                        }}
-                        onMouseEnter={e => e.currentTarget.style.opacity = '1'}
-                        onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
+                  )}
+                  {col.map((note, noteIndex) => {
+                    const globalIndex = colIndex * col.length + noteIndex;
+                    const isDeleting = deletingCardId === note.id;
+                    const hasAnimated = animatedCardIds.has(note.id);
+                    const isNewCard = !hasAnimated && !isDeleting;
+                    return (
+                      <div 
+                        key={note.id} 
+                        ref={el => cardRefs.current[note.id] = el} 
+                        style={{ 
+                          overflow: 'visible', 
+                          zIndex: 1, 
+                          '--card-index': globalIndex
+                        }} 
+                        className={`note-card-wrapper${isDeleting ? ' note-card-delete' : ''}${isNewCard ? ' note-card-scroll-in' : ''}`} 
+                        onAnimationEnd={() => setAnimatedCardIds(prev => new Set([...prev, note.id]))}
                       >
-                        <Icon name="trash-2" style={{ width: 16, height: 16 }} />
-                      </button>
+                        <NoteCard
+                          note={note}
+                          onOpen={() => !isDeleting && onSelectNote(note)}
+                          onDelete={() => handleDeleteWithAnimation(note.id)}
+                          onDeleteWithAnimation={handleDeleteWithAnimation}
+                          isNew={false}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              <div 
+                onClick={onNewNote}
+                style={getListItemStyle()}
+                ref={el => cardRefs.current['__new__'] = el}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.transform = 'translateY(-2px)';
+                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.transform = 'translateY(0)';
+                  e.currentTarget.style.boxShadow = 'none';
+                }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <div style={{ 
+                    width: '44px', 
+                    height: '44px', 
+                    borderRadius: '12px',
+                    background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    boxShadow: '0 4px 12px rgba(102, 126, 234, 0.3)'
+                  }}>
+                    <Icon name="plus" style={{ width: 22, height: 22, color: '#fff' }} />
+                  </div>
+                  <span style={{ fontSize: '15px', color: 'var(--text-secondary)', fontWeight: '500' }}>新建笔记</span>
+                </div>
+              </div>
+              {filteredNotes.map((note, index) => {
+                const isDeleting = deletingCardId === note.id;
+                const hasAnimated = animatedCardIds.has(note.id);
+                const isNewCard = !hasAnimated && !isDeleting;
+                return (
+                  <div 
+                    key={note.id} 
+                    ref={el => cardRefs.current[note.id] = el}
+                    onClick={() => !isDeleting && onSelectNote(note)}
+                    style={getListItemStyle()}
+                    className={`note-card-wrapper${isDeleting ? ' note-card-delete' : ''}${isNewCard ? ' note-card-scroll-in' : ''}`}
+                    onAnimationEnd={() => setAnimatedCardIds(prev => new Set([...prev, note.id]))}
+                    onMouseEnter={(e) => {
+                      if (!isDeleting) {
+                        e.currentTarget.style.transform = 'translateY(-2px)';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'translateY(0)';
+                      e.currentTarget.style.boxShadow = 'none';
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ 
+                        width: '44px', 
+                        height: '44px', 
+                        borderRadius: '12px',
+                        background: getGradient(note.title || note.content || note.id),
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        flexShrink: 0
+                      }}>
+                        <Icon name="file-text" style={{ width: 20, height: 20, color: '#fff' }} />
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <h3 style={{ margin: 0, fontSize: '15px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                          {note.title || '无标题'}
+                        </h3>
+                        <p style={{ 
+                          margin: 0, 
+                          fontSize: '13px', 
+                          color: 'var(--text-secondary)',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {getPlainText(note.content) || '空白笔记'}
+                        </p>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {formatRelativeTime(note.updatedAt)}
+                        </span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleDeleteWithAnimation(note.id); }}
+                          style={{
+                            background: 'none',
+                            border: 'none',
+                            cursor: 'pointer',
+                            color: 'aliceblue',
+                            padding: '4px',
+                            opacity: 0.5,
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                          onMouseLeave={e => e.currentTarget.style.opacity = '0.5'}
+                        >
+                          <Icon name="trash-2" style={{ width: 16, height: 16 }} />
+                        </button>
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
+        </div>
         {deleteConfirm && (
           <div style={{
             position: 'fixed',

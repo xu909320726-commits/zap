@@ -188,7 +188,17 @@ export function useStore() {
       return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}`;
     };
 
+    const formatTags = (tagIds) => {
+      if (!tagIds || tagIds.length === 0) return '(空)';
+      const tagNames = tagIds.map(id => {
+        const tag = tags.find(t => t.id === id);
+        return tag ? tag.name : id;
+      });
+      return tagNames.join(', ');
+    };
+
     const isDateField = (key) => key === 'dueDate' || key === 'endDate';
+    const isTagField = (key) => key === 'tagIds';
 
     for (const [key, label] of Object.entries(fieldLabels)) {
       if (updates[key] !== undefined && updates[key] !== task[key]) {
@@ -197,6 +207,9 @@ export function useStore() {
         if (isDateField(key)) {
           oldValue = formatDateTime(oldValue);
           newValue = formatDateTime(newValue);
+        } else if (isTagField(key)) {
+          oldValue = formatTags(oldValue);
+          newValue = formatTags(newValue);
         }
         changedFields.push(`${label}: ${oldValue} → ${newValue}`);
       }

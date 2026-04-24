@@ -105,10 +105,60 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
   const getTasksForDate = useCallback((date) => {
     return tasks.filter(task => {
       if (!task.dueDate) return false;
-      const taskDate = new Date(task.dueDate);
-      return taskDate.toDateString() === date.toDateString();
+      const taskStartDate = new Date(task.dueDate);
+      const taskEndDate = task.endDate ? new Date(task.endDate) : null;
+      
+      // 设置时间为当天的开始和结束
+      const dateStart = new Date(date);
+      dateStart.setHours(0, 0, 0, 0);
+      const dateEnd = new Date(date);
+      dateEnd.setHours(23, 59, 59, 999);
+      
+      // 如果有结束日期，检查日期是否在区间内
+      if (taskEndDate) {
+        return taskStartDate <= dateEnd && taskEndDate >= dateStart;
+      }
+      
+      // 如果没有结束日期，只检查开始日期
+      return taskStartDate.toDateString() === date.toDateString();
     });
   }, [tasks]);
+
+  // 计算任务在某一天应该显示的时间段
+  const getTaskTimeDisplay = useCallback((task, date) => {
+    const startDate = new Date(task.dueDate);
+    const endDate = task.endDate ? new Date(task.endDate) : null;
+    
+    if (!endDate) {
+      // 如果没有结束时间，只显示开始时间
+      const hours = startDate.getHours().toString().padStart(2, '0');
+      const minutes = startDate.getMinutes().toString().padStart(2, '0');
+      return `${hours}:${minutes}`;
+    }
+    
+    const dateStr = date.toDateString();
+    const startDateStr = startDate.toDateString();
+    const endDateStr = endDate.toDateString();
+    
+    const padTime = (d) => `${d.getHours().toString().padStart(2, '0')}:${d.getMinutes().toString().padStart(2, '0')}`;
+    
+    // 如果是区间任务
+    if (startDateStr !== endDateStr) {
+      // 第一天：显示从开始时间到当天结束（或18:00）
+      if (dateStr === startDateStr) {
+        return `${padTime(startDate)}-18:00`;
+      }
+      // 最后一天：显示从当天开始（或9:00）到结束时间
+      if (dateStr === endDateStr) {
+        return `09:00-${padTime(endDate)}`;
+      }
+      // 中间的天：显示9:00-18:00
+      return '9:00-18:00';
+    }
+    
+    // 同一天
+    return `${padTime(startDate)}-${padTime(endDate)}`;
+  }, []);
 
   // 导航操作
   const navigatePrev = () => {
@@ -305,9 +355,21 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
             const dayTasks = getTasksForDate(dayData.date);
             const isToday = dayData.date.toDateString() === today.toDateString();
             
-            // 检查是否需要高亮（日期匹配高亮任务的截止日期）
+            // 检查是否需要高亮（日期匹配高亮任务的日期或在其日期区间内）
             const isHighlighted = highlightedTask && highlightedTask.dueDate && 
-              dayData.date.toDateString() === new Date(highlightedTask.dueDate).toDateString();
+              (() => {
+                const taskStart = new Date(highlightedTask.dueDate);
+                const taskEnd = highlightedTask.endDate ? new Date(highlightedTask.endDate) : null;
+                const dateStart = new Date(dayData.date);
+                dateStart.setHours(0, 0, 0, 0);
+                const dateEnd = new Date(dayData.date);
+                dateEnd.setHours(23, 59, 59, 999);
+                
+                if (taskEnd) {
+                  return taskStart <= dateEnd && taskEnd >= dateStart;
+                }
+                return taskStart.toDateString() === dayData.date.toDateString();
+              })();
             
             return (
               <div
@@ -322,6 +384,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                       ? tags.find(t => t.id === task.tagIds[0])
                       : null;
                     const tagColor = taskTag ? taskTag.color : null;
+                    const timeDisplay = getTaskTimeDisplay(task, dayData.date);
                     
                     return (
                       <div
@@ -334,6 +397,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                         } : {}}
                       >
                         <Icon name="circle" size={10} />
+                        <span className="task-time">{timeDisplay}</span>
                         {task.title}
                       </div>
                     );
@@ -381,6 +445,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                     ? tags.find(t => t.id === task.tagIds[0])
                     : null;
                   const tagColor = taskTag ? taskTag.color : null;
+                  const timeDisplay = getTaskTimeDisplay(task, date);
                   
                   return (
                     <div
@@ -393,6 +458,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                       } : {}}
                     >
                       <Icon name="circle" size={10} />
+                      <span className="task-time">{timeDisplay}</span>
                       {task.title}
                     </div>
                   );
@@ -468,7 +534,40 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                 
                 // 计算整体位置和大小
                 const top = (startMinutes / 60) * hourHeight;
-                const height = Math.max(((endMinutes - startMinutes) / 60) * hourHeight, 20);
+                
+                // 对于跨天任务，计算调整后的结束时间
+                let displayEndMinutes = endMinutes;
+                let displayStartMinutes = startMinutes;
+                let adjustedTop = top;
+                
+                if (task.endDate) {
+                  const taskStart = new Date(task.dueDate);
+                  const taskEnd = new Date(task.endDate);
+                  const currentDateStr = currentDate.toDateString();
+                  const startDateStr = taskStart.toDateString();
+                  const endDateStr = taskEnd.toDateString();
+                  
+                  // 如果是跨天任务
+                  if (startDateStr !== endDateStr) {
+                    // 如果是开始日期，结束时间设为18:00
+                    if (currentDateStr === startDateStr) {
+                      displayEndMinutes = 18 * 60; // 18:00
+                    }
+                    // 如果是中间日期或结束日期
+                    else if (currentDateStr !== startDateStr && currentDateStr !== endDateStr) {
+                      // 中间天：9:00-18:00
+                      adjustedTop = (9 * 60 / 60) * hourHeight; // 9:00开始
+                      displayStartMinutes = 9 * 60; // 9:00
+                      displayEndMinutes = 18 * 60; // 18:00
+                    } else if (currentDateStr === endDateStr) {
+                      // 结束日期，开始时间设为9:00
+                      adjustedTop = (9 * 60 / 60) * hourHeight; // 9:00开始
+                      displayStartMinutes = 9 * 60; // 9:00
+                    }
+                  }
+                }
+                
+                const height = Math.max(((displayEndMinutes - displayStartMinutes) / 60) * hourHeight, 20);
                 
                 // 计算宽度和偏移
                 const width = 100 / maxTrack;
@@ -479,6 +578,9 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                   : null;
                 const tagColor = taskTag ? taskTag.color : null;
                 
+                // 获取该日期应该显示的时间段
+                const timeDisplay = getTaskTimeDisplay(task, currentDate);
+                
                 return (
                   <div
                     key={task.id}
@@ -487,7 +589,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                       backgroundColor: tagColor && !task.completed ? tagColor + '20' : undefined,
                       color: tagColor && !task.completed ? tagColor : undefined,
                       borderLeftColor: tagColor && !task.completed ? tagColor : undefined,
-                      top: `${top}px`,
+                      top: `${adjustedTop}px`,
                       height: `${height}px`,
                       left: `${left}%`,
                       width: `${width}%`,
@@ -495,7 +597,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                     }}
                   >
                     <Icon name="circle" size={10} />
-                    <span className="task-time">{Math.floor(startMinutes / 60).toString().padStart(2, '0')}:{(startMinutes % 60).toString().padStart(2, '0')} - {Math.floor(endMinutes / 60).toString().padStart(2, '0')}:{(endMinutes % 60).toString().padStart(2, '0')}</span>
+                    <span className="task-time">{timeDisplay}</span>
                     <span className="task-title">{task.title}</span>
                   </div>
                 );
@@ -564,13 +666,45 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
             {dayTasks.filter(t => t.dueDate).map(task => {
               const startDate = new Date(task.dueDate);
               const endDate = task.endDate ? new Date(task.endDate) : new Date(startDate.getTime() + 60 * 60 * 1000);
-              const startHour = startDate.getHours();
-              const startMinute = startDate.getMinutes();
-              const endHour = endDate.getHours();
-              const endMinute = endDate.getMinutes();
-              const top = (startHour + startMinute / 60) * timelineHeight;
+              let startHour = startDate.getHours();
+              let startMinute = startDate.getMinutes();
+              let endHour = endDate.getHours();
+              let endMinute = endDate.getMinutes();
+              let top = (startHour + startMinute / 60) * timelineHeight;
+              
+              // 对于跨天任务，调整时间显示
+              const taskStartDateStr = startDate.toDateString();
+              const taskEndDateStr = endDate.toDateString();
+              const currentDateStr = currentDate.toDateString();
+              
+              // 如果是跨天任务
+              if (taskStartDateStr !== taskEndDateStr) {
+                // 如果是开始日期，结束时间设为18:00
+                if (currentDateStr === taskStartDateStr) {
+                  endHour = 18;
+                  endMinute = 0;
+                }
+                // 如果是中间日期
+                else if (currentDateStr !== taskStartDateStr && currentDateStr !== taskEndDateStr) {
+                  // 中间天：9:00-18:00
+                  top = (9 * 60 / 60) * timelineHeight; // 9:00开始
+                  startHour = 9;
+                  startMinute = 0;
+                  endHour = 18;
+                  endMinute = 0;
+                } else if (currentDateStr === taskEndDateStr) {
+                  // 结束日期，开始时间设为9:00
+                  top = (9 * 60 / 60) * timelineHeight; // 9:00开始
+                  startHour = 9;
+                  startMinute = 0;
+                }
+              }
+              
               const duration = (endHour + endMinute / 60) - (startHour + startMinute / 60);
               const height = Math.max(duration * timelineHeight, 24);
+              
+              // 获取该日期应该显示的时间段
+              const timeDisplay = getTaskTimeDisplay(task, currentDate);
               
               return (
                 <div
@@ -579,8 +713,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                   style={{ top, height }}
                 >
                   <span className="task-time">
-                    {startHour.toString().padStart(2, '0')}:
-                    {startMinute.toString().padStart(2, '0')}
+                    {timeDisplay}
                   </span>
                   <span className="task-title">{task.title}</span>
                 </div>

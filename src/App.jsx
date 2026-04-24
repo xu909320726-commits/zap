@@ -128,7 +128,7 @@ function App() {
   const [selectedTaskId, setSelectedTaskId] = useState(null);
   const [highlightedTaskId, setHighlightedTaskId] = useState(null);
   const [highlightedTagId, setHighlightedTagId] = useState(null);
-  const [expandedMenus, setExpandedMenus] = useState(['task']);
+  const [expandedMenus, setExpandedMenus] = useState([]);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [theme, setTheme] = useState(() => {
     const saved = localStorage.getItem('zap-theme');
@@ -167,6 +167,7 @@ function App() {
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   });
   const [completedFilterMode, setCompletedFilterMode] = useState('day'); // 'day' or 'week'
+  const [completedFilterType, setCompletedFilterType] = useState('completed'); // 'completed' or 'due'
 
   // 当切换到任务相关页面（待办、已办、垃圾箱）或日期筛选变化时，重置动画
   useEffect(() => {
@@ -183,7 +184,7 @@ function App() {
     } else if (activeListId === 'home') {
       setHomeAnimationKey(prev => prev + 1);
     }
-  }, [activeListId, completedFilterDate, completedFilterMode]);
+  }, [activeListId, completedFilterDate, completedFilterMode, completedFilterType]);
 
   const searchInputRef = useRef(null);
   const addTaskCardRef = useRef(null);
@@ -544,24 +545,26 @@ function App() {
       const filterDate = new Date(completedFilterDate);
       if (completedFilterMode === 'week') {
         const weekStart = new Date(filterDate);
-        weekStart.setDate(filterDate.getDate() - filterDate.getDay() + 1);
+        weekStart.setDate(filterDate.getDate() - (filterDate.getDay() || 7) + 1);
         weekStart.setHours(0, 0, 0, 0);
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
         weekEnd.setHours(23, 59, 59, 999);
         return tasks.filter(t => {
           if (!t.completed) return false;
-          if (!t.completedAt) return false;
-          const completedDate = new Date(t.completedAt);
-          return completedDate >= weekStart && completedDate <= weekEnd;
+          if (completedFilterType === 'completed' && !t.completedAt) return false;
+          if (completedFilterType === 'due' && !t.dueDate) return false;
+          const targetDate = new Date(completedFilterType === 'completed' ? t.completedAt : t.dueDate);
+          return targetDate >= weekStart && targetDate <= weekEnd;
         });
       } else {
         filterDate.setHours(23, 59, 59, 999);
         return tasks.filter(t => {
           if (!t.completed) return false;
-          if (!t.completedAt) return false;
-          const completedDate = new Date(t.completedAt);
-          return completedDate.toDateString() === filterDate.toDateString();
+          if (completedFilterType === 'completed' && !t.completedAt) return false;
+          if (completedFilterType === 'due' && !t.dueDate) return false;
+          const targetDate = new Date(completedFilterType === 'completed' ? t.completedAt : t.dueDate);
+          return targetDate.toDateString() === filterDate.toDateString();
         });
       }
     }
@@ -789,10 +792,21 @@ function App() {
     if (!startDate) return '';
     const start = formatDueDate(startDate);
     if (!endDate) return start;
+    
+    const startDateStr = `${startDate.getMonth() + 1}月${startDate.getDate()}日`;
+    const endDateStr = `${endDate.getMonth() + 1}月${endDate.getDate()}日`;
+    
     const startTime = formatTimeForInput(startDate);
     const endTime = formatTimeForInput(endDate);
-    if (startTime === endTime) return `${start} ${startTime}`;
-    return `${start} ${startTime} - ${endTime}`;
+    
+    const sameDate = startDate.toDateString() === endDate.toDateString();
+    
+    if (sameDate) {
+      if (startTime === endTime) return `${start} ${startTime}`;
+      return `${start} ${startTime} - ${endTime}`;
+    } else {
+      return `${startDateStr} ${startTime} - ${endDateStr} ${endTime}`;
+    }
   };
 
 
@@ -1001,7 +1015,14 @@ function App() {
                 昨天
               </button>
               <button
-                className={`completed-filter-quick-btn ${completedFilterMode === 'week' ? 'active' : ''}`}
+                className={`completed-filter-quick-btn ${(() => {
+                  if (completedFilterMode !== 'week') return '';
+                  const today = new Date();
+                  const weekStart = new Date(today);
+                  weekStart.setDate(today.getDate() - today.getDay() + 1);
+                  const filterDate = new Date(completedFilterDate);
+                  return weekStart.toDateString() === filterDate.toDateString() ? 'active' : '';
+                })()}`}
                 onClick={() => {
                   const today = new Date();
                   const weekStart = new Date(today);
@@ -1012,16 +1033,51 @@ function App() {
               >
                 本周
               </button>
+              <button
+                className={`completed-filter-quick-btn ${(() => {
+                  if (completedFilterMode !== 'week') return '';
+                  const today = new Date();
+                  const lastWeekStart = new Date(today);
+                  lastWeekStart.setDate(today.getDate() - today.getDay() - 6);
+                  const filterDate = new Date(completedFilterDate);
+                  return lastWeekStart.toDateString() === filterDate.toDateString() ? 'active' : '';
+                })()}`}
+                onClick={() => {
+                  const today = new Date();
+                  const lastWeekStart = new Date(today);
+                  lastWeekStart.setDate(today.getDate() - today.getDay() - 6);
+                  setCompletedFilterDate(`${lastWeekStart.getFullYear()}-${String(lastWeekStart.getMonth() + 1).padStart(2, '0')}-${String(lastWeekStart.getDate()).padStart(2, '0')}`);
+                  setCompletedFilterMode('week');
+                }}
+              >
+                上周
+              </button>
             </div>
-            <input
-              type="date"
-              className="completed-filter-input"
-              value={completedFilterDate}
-              onChange={(e) => {
-                setCompletedFilterDate(e.target.value);
-                setCompletedFilterMode('day');
-              }}
-            />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <div className="completed-filter-type">
+                <button
+                  className={`completed-filter-type-btn ${completedFilterType === 'completed' ? 'active' : ''}`}
+                  onClick={() => setCompletedFilterType('completed')}
+                >
+                  完成时间
+                </button>
+                <button
+                  className={`completed-filter-type-btn ${completedFilterType === 'due' ? 'active' : ''}`}
+                  onClick={() => setCompletedFilterType('due')}
+                >
+                  到期时间
+                </button>
+              </div>
+              <input
+                type="date"
+                className="completed-filter-input"
+                value={completedFilterDate}
+                onChange={(e) => {
+                  setCompletedFilterDate(e.target.value);
+                  setCompletedFilterMode('day');
+                }}
+              />
+            </div>
           </div>
         </div>
       )}

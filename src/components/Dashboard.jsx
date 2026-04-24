@@ -177,10 +177,10 @@ function Dashboard({ tasks, onNavigate, onTaskClick, animationKey }) {
           {['todo', 'done', 'today', 'overdue'].map((type, index) => {
             const shouldAnimate = animationKey > 0 && !animatedItems.has(type);
             const statsMap = {
-              todo: { icon: 'circle', color: 'rgba(13, 124, 102, 0.1)', iconColor: '#0D7C66', value: stats.todo, label: '待办', nav: 'todo' },
-              done: { icon: 'check-circle', color: 'rgba(0, 200, 81, 0.1)', iconColor: '#00C851', value: stats.done, label: '已完成', nav: 'done' },
-              today: { icon: 'calendar', color: 'rgba(255, 215, 0, 0.1)', iconColor: '#FFD700', value: stats.todayTodo, label: '今日待办', nav: 'calendar' },
-              overdue: { icon: 'alert-triangle', color: stats.overdue > 0 ? 'rgba(255, 77, 77, 0.1)' : 'rgba(255, 77, 77, 0.05)', iconColor: '#FF4D4D', value: stats.overdue, label: '逾期', nav: 'todo', hasWarning: stats.overdue > 0 }
+              todo: { icon: 'circle', color: 'rgba(99, 102, 241, 0.15)', iconColor: '#6366f1', value: stats.todo, label: '待办', nav: 'todo' },
+              done: { icon: 'check-circle', color: 'rgba(16, 185, 129, 0.15)', iconColor: '#10b981', value: stats.done, label: '已完成', nav: 'done' },
+              today: { icon: 'calendar', color: 'rgba(245, 158, 11, 0.15)', iconColor: '#f59e0b', value: stats.todayTodo, label: '今日待办', nav: 'calendar' },
+              overdue: { icon: 'alert-triangle', color: stats.overdue > 0 ? 'rgba(239, 68, 68, 0.15)' : 'rgba(239, 68, 68, 0.05)', iconColor: '#ef4444', value: stats.overdue, label: '逾期', nav: 'todo', hasWarning: stats.overdue > 0 }
             };
             const config = statsMap[type];
             return (

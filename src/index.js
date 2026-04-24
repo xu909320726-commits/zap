@@ -3,6 +3,12 @@ import ReactDOM from 'react-dom/client';
 import App from './App';
 import './styles/index.css';
 
+// 生产环境禁用 console.log
+if (process.env.NODE_ENV === 'production') {
+  console.log = () => {};
+  console.info = () => {};
+}
+
 // 抑制 ResizeObserver 循环完成警告（这个警告不影响功能）
 const originalError = console.error;
 console.error = (...args) => {

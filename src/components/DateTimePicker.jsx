@@ -23,7 +23,6 @@ function DateTimePicker({ value, onChange, placeholder, showTime = false }) {
         defaultDate: value || null,
         locale: 'zh',
         inline: false,
-        theme: 'material_green',
         onChange: (selectedDates, dateStr) => {
           if (onChange && selectedDates.length > 0) {
             onChange(selectedDates[0], dateStr);

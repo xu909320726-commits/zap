@@ -64,7 +64,7 @@ function TaskList({
           className={`task-item ${task.completed ? 'completed' : ''} ${isOverdue(task) ? 'overdue' : ''} ${isToday(task) ? 'today' : ''}`}
         >
           <div 
-            className={`task-checkbox ${task.completed ? 'checked' : ''}`}
+            className={`task-checkbox ${task.completed ? 'checked' : ''} custom-cursor-on-hover`}
             onClick={() => onToggleComplete(task.id)}
           />
 

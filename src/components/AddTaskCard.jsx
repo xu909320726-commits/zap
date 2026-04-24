@@ -131,15 +131,24 @@ const AddTaskCard = forwardRef(({ onSubmit, lists = [], tags = [] }, ref) => {
 
   const formatDisplay = () => {
     if (!dueDate) return '';
-    const dateStr = formatDueDate(dueDate);
-    const hours = dueDate.getHours().toString().padStart(2, '0');
-    const minutes = dueDate.getMinutes().toString().padStart(2, '0');
+    const startDateStr = `${dueDate.getMonth() + 1}月${dueDate.getDate()}日`;
+    const startHours = dueDate.getHours().toString().padStart(2, '0');
+    const startMinutes = dueDate.getMinutes().toString().padStart(2, '0');
+    
     if (endTime) {
+      const endDateStr = `${endTime.getMonth() + 1}月${endTime.getDate()}日`;
       const endHours = endTime.getHours().toString().padStart(2, '0');
       const endMinutes = endTime.getMinutes().toString().padStart(2, '0');
-      return `${dateStr} ${hours}:${minutes} - ${endHours}:${endMinutes}`;
+      
+      const sameDate = dueDate.toDateString() === endTime.toDateString();
+      
+      if (sameDate) {
+        return `${startDateStr} ${startHours}:${startMinutes} - ${endHours}:${endMinutes}`;
+      } else {
+        return `${startDateStr} ${startHours}:${startMinutes} - ${endDateStr} ${endHours}:${endMinutes}`;
+      }
     }
-    return `${dateStr} ${hours}:${minutes}`;
+    return `${startDateStr} ${startHours}:${startMinutes}`;
   };
 
   return (
@@ -320,10 +329,13 @@ const AddTaskCard = forwardRef(({ onSubmit, lists = [], tags = [] }, ref) => {
 function DateTimePicker({ value, endValue, onChange, onClose }) {
   const [currentDate, setCurrentDate] = useState(value || new Date());
   const [viewMode, setViewMode] = useState('days');
-  const [hours, setHours] = useState(value ? value.getHours() : null);
-  const [minutes, setMinutes] = useState(value ? value.getMinutes() : null);
-  const [endHours, setEndHours] = useState(endValue ? endValue.getHours() : (value ? value.getHours() + 1 : null));
-  const [endMinutes, setEndMinutes] = useState(endValue ? endValue.getMinutes() : (value ? value.getMinutes() : null));
+  const [hours, setHours] = useState(value ? value.getHours() : 9);
+  const [minutes, setMinutes] = useState(value ? value.getMinutes() : 0);
+  const [endHours, setEndHours] = useState(endValue ? endValue.getHours() : 18);
+  const [endMinutes, setEndMinutes] = useState(endValue ? endValue.getMinutes() : 0);
+  const [startDate, setStartDate] = useState(value || null);
+  const [endDate, setEndDate] = useState(endValue || null);
+  const [isSelectingEnd, setIsSelectingEnd] = useState(false);
 
   // 当开始时间变化时，自动调整结束时间（保持+1小时）
   useEffect(() => {
@@ -389,14 +401,28 @@ function DateTimePicker({ value, endValue, onChange, onClose }) {
   };
 
   const handleSelectDate = (date) => {
-    const newDate = new Date(date);
-    newDate.setHours(hours, minutes, 0, 0);
-    
-    // 始终创建结束时间
-    const newEndTime = new Date(date);
-    newEndTime.setHours(endHours, endMinutes, 0, 0);
-    
-    onChange(newDate, newEndTime);
+    if (!startDate || isSelectingEnd) {
+      setStartDate(date);
+      setEndDate(null);
+      setIsSelectingEnd(false);
+    } else {
+      if (date < startDate) {
+        setStartDate(date);
+        setEndDate(startDate);
+      } else if (date.getTime() === startDate.getTime()) {
+        setEndDate(null);
+        setIsSelectingEnd(false);
+        const newDateTime = new Date(date);
+        newDateTime.setHours(hours, minutes, 0, 0);
+        const newEndTime = new Date(date);
+        newEndTime.setHours(endHours, endMinutes, 0, 0);
+        onChange(newDateTime, newEndTime);
+        return;
+      } else {
+        setEndDate(date);
+      }
+      setIsSelectingEnd(false);
+    }
   };
 
   const handleMonthSelect = (monthIndex) => {
@@ -414,14 +440,20 @@ function DateTimePicker({ value, endValue, onChange, onClose }) {
   };
 
   const handleTimeConfirm = () => {
-    const newDate = new Date(value || new Date());
-    newDate.setHours(hours, minutes, 0, 0);
-    
-    // 始终创建结束时间
-    const newEndTime = new Date(value || new Date());
-    newEndTime.setHours(endHours, endMinutes, 0, 0);
-    
-    onChange(newDate, newEndTime);
+    if (startDate) {
+      const startDateTime = new Date(startDate);
+      startDateTime.setHours(hours || 0, minutes || 0, 0, 0);
+      
+      if (endDate) {
+        const endDateTime = new Date(endDate);
+        endDateTime.setHours(endHours, endMinutes, 0, 0);
+        onChange(startDateTime, endDateTime);
+      } else {
+        const newEndTime = new Date(startDate);
+        newEndTime.setHours(endHours, endMinutes, 0, 0);
+        onChange(startDateTime, newEndTime);
+      }
+    }
     onClose();
   };
 
@@ -472,6 +504,25 @@ function DateTimePicker({ value, endValue, onChange, onClose }) {
           </button>
         </div>
 
+        <div className="datetime-range-indicator">
+            <span className="range-start">{startDate ? `${startDate.getMonth() + 1}月${startDate.getDate()}日` : '选择开始'}</span>
+            {endDate && <span className="range-arrow"> → </span>}
+            <span className="range-end">{endDate ? `${endDate.getMonth() + 1}月${endDate.getDate()}日` : (startDate ? (isSelectingEnd ? '选择结束' : '点击日期完成') : '')}</span>
+            {(startDate || isSelectingEnd) && (
+              <button 
+                className="range-clear-btn"
+                onClick={() => {
+                  setStartDate(null);
+                  setEndDate(null);
+                  setIsSelectingEnd(false);
+                }}
+                title="清除选择"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+
         {viewMode === 'days' && (
           <>
             <div className="datetime-weekdays">
@@ -482,15 +533,22 @@ function DateTimePicker({ value, endValue, onChange, onClose }) {
               ))}
             </div>
             <div className="datetime-days">
-              {days.map((dayData, index) => (
-                <button
-                  key={index}
-                  className={`datetime-day ${!dayData.isCurrentMonth ? 'other-month' : ''} ${isToday(dayData.date) ? 'today' : ''} ${isSelected(dayData.date) ? 'selected' : ''}`}
-                  onClick={() => handleSelectDate(dayData.date)}
-                >
-                  {dayData.date.getDate()}
-                </button>
-              ))}
+              {days.map((dayData, index) => {
+                const isInRange = startDate && endDate && 
+                  dayData.date >= startDate && dayData.date <= endDate;
+                const isRangeStart = startDate && dayData.date.toDateString() === startDate.toDateString();
+                const isRangeEnd = endDate && dayData.date.toDateString() === endDate.toDateString();
+                
+                return (
+                  <button
+                    key={index}
+                    className={`datetime-day ${!dayData.isCurrentMonth ? 'other-month' : ''} ${isToday(dayData.date) ? 'today' : ''} ${isSelected(dayData.date) ? 'selected' : ''} ${isInRange ? 'in-range' : ''} ${isRangeStart ? 'range-start' : ''} ${isRangeEnd ? 'range-end' : ''}`}
+                    onClick={() => handleSelectDate(dayData.date)}
+                  >
+                    {dayData.date.getDate()}
+                  </button>
+                );
+              })}
             </div>
           </>
         )}
@@ -525,29 +583,27 @@ function DateTimePicker({ value, endValue, onChange, onClose }) {
 
         <div className="datetime-shortcuts">
           <button className="datetime-shortcut" onClick={() => {
-            const d = new Date();
-            d.setHours(hours, minutes, 0, 0);
-            const e = new Date();
-            e.setHours(endHours, endMinutes, 0, 0);
-            onChange(d, e);
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            setStartDate(todayStart);
+            setEndDate(null);
+            setIsSelectingEnd(true);
           }}>今天</button>
           <button className="datetime-shortcut" onClick={() => {
-            const d = new Date();
-            d.setDate(d.getDate() + 1);
-            d.setHours(hours, minutes, 0, 0);
-            const e = new Date();
-            e.setDate(e.getDate() + 1);
-            e.setHours(endHours, endMinutes, 0, 0);
-            onChange(d, e);
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            tomorrow.setHours(0, 0, 0, 0);
+            setStartDate(tomorrow);
+            setEndDate(null);
+            setIsSelectingEnd(true);
           }}>明天</button>
           <button className="datetime-shortcut" onClick={() => {
-            const d = new Date();
-            d.setDate(d.getDate() + 7);
-            d.setHours(hours, minutes, 0, 0);
-            const e = new Date();
-            e.setDate(e.getDate() + 7);
-            e.setHours(endHours, endMinutes, 0, 0);
-            onChange(d, e);
+            const nextWeek = new Date();
+            nextWeek.setDate(nextWeek.getDate() + 7);
+            nextWeek.setHours(0, 0, 0, 0);
+            setStartDate(nextWeek);
+            setEndDate(null);
+            setIsSelectingEnd(true);
           }}>一周后</button>
         </div>
       </div>
