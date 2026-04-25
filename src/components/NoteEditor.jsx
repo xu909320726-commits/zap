@@ -79,7 +79,7 @@ export default function NoteEditorModal({ note, onSave, onClose, isNew }) {
   useEffect(() => {
     setTitle(note?.title || '');
     const noteContent = note?.content || '';
-    
+    collect_auto_refund_task
     // 初始化 imageMap，从内容中提取 base64 图片
     const newImageMap = new Map();
     let displayContent = noteContent;

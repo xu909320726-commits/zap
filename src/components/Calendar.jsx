@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { useStore } from '../hooks/useStore';
 import { formatDueDate } from '../utils/dateParser';
 import Icon from './Icon';
@@ -14,15 +14,19 @@ const WEEK_DAYS = ['周日', '周一', '周二', '周三', '周四', '周五', '
 const VIEW_TYPES = {
   MONTH: 'month',
   WEEK: 'week',
-  DAY: 'day',
-  TIMELINE: 'timeline'
+  DAY: 'day'
 };
 
 function Calendar({ onClose, highlightedTaskId, showToast }) {
-  const { tasks, updateTask, tags } = useStore();
+  const { tasks, updateTask, tags, deletedTasks } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState(VIEW_TYPES.MONTH);
   const [showExportModal, setShowExportModal] = useState(false);
+  const weekBodyRef = useRef(null);
+  const weekScaleRef = useRef(null);
+  const dayTimeScaleRef = useRef(null);
+  const dayBodyRef = useRef(null);
+  const dayGridRef = useRef(null);
 
   // 初始化 Lucide 图标
   useEffect(() => {
@@ -46,6 +50,152 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       }
     }
   }, [highlightedTaskId, tasks]);
+
+  // 周视图自动滚动到有任务的时间点
+  useEffect(() => {
+    if (viewType === VIEW_TYPES.WEEK && weekBodyRef.current && weekScaleRef.current) {
+      // 延迟执行，确保 DOM 已渲染
+      const timer = setTimeout(() => {
+        const days = getWeekData();
+        let minHour = 24;
+        let maxHour = 0;
+        let hasTask = false;
+        
+        // 找到本周最早和最晚的任务时间
+        days.forEach(date => {
+          const dayTasks = getTasksForDate(date);
+          if (dayTasks.length > 0) {
+            hasTask = true;
+            dayTasks.forEach(task => {
+              const startDate = new Date(task.dueDate);
+              const endDate = task.endDate ? new Date(task.endDate) : null;
+              
+              // 只考虑当天开始的任务
+              if (startDate.toDateString() === date.toDateString()) {
+                const hour = startDate.getHours();
+                if (hour < minHour) minHour = hour;
+                if (hour > maxHour) maxHour = hour;
+              }
+              
+              // 也考虑当天结束的任务
+              if (endDate && endDate.toDateString() === date.toDateString()) {
+                const endHour = endDate.getHours();
+                if (endHour > maxHour) maxHour = endHour;
+              }
+            });
+          }
+        });
+        
+        // 如果有任务，平滑滚动到任务时间范围的中心（居中显示）
+        if (hasTask && minHour < 24 && maxHour >= minHour) {
+          const hourHeight = 60;
+          const containerHeight = weekBodyRef.current.clientHeight || 600;
+          const midHour = (minHour + maxHour) / 2;
+          const targetScrollTop = Math.max(0, (midHour * hourHeight) - (containerHeight / 2) + (hourHeight / 2));
+          
+          // 平滑滚动函数
+          const smoothScrollTo = (element, target, duration = 500) => {
+            const start = element.scrollTop;
+            const startTime = performance.now();
+            
+            const animate = (currentTime) => {
+              const elapsed = currentTime - startTime;
+              const progress = Math.min(elapsed / duration, 1);
+              
+              // 使用 easeOutCubic 缓动函数
+              const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+              const currentPosition = start + (target - start) * easeOutCubic(progress);
+              
+              element.scrollTop = currentPosition;
+              
+              if (progress < 1) {
+                requestAnimationFrame(animate);
+              }
+            };
+            
+            requestAnimationFrame(animate);
+          };
+          
+          // 执行平滑滚动
+          smoothScrollTo(weekBodyRef.current, targetScrollTop, 600);
+          if (weekScaleRef.current) {
+            smoothScrollTo(weekScaleRef.current, targetScrollTop, 600);
+          }
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [viewType, currentDate]);
+
+  // 日视图自动滚动到有任务的时间点
+  useEffect(() => {
+    if (viewType === VIEW_TYPES.DAY && dayGridRef.current) {
+      const timer = setTimeout(() => {
+        const dayTasks = getTasksForDate(currentDate);
+        
+        if (dayTasks.length === 0) return;
+        
+        let minHour = 24;
+        let maxHour = 0;
+        
+        dayTasks.forEach(task => {
+          const startDate = new Date(task.dueDate);
+          const endDate = task.endDate ? new Date(task.endDate) : null;
+          
+          if (startDate.toDateString() === currentDate.toDateString()) {
+            const hour = startDate.getHours();
+            if (hour < minHour) minHour = hour;
+            if (hour > maxHour) maxHour = hour;
+          }
+          
+          if (endDate && endDate.toDateString() === currentDate.toDateString()) {
+            const hour = endDate.getHours();
+            if (hour > maxHour) maxHour = hour;
+          }
+          
+          if (startDate.toDateString() !== currentDate.toDateString() && 
+              endDate && endDate.toDateString() === currentDate.toDateString()) {
+            minHour = 9;
+          }
+          
+          if (startDate.toDateString() !== currentDate.toDateString() && 
+              endDate && endDate.toDateString() !== currentDate.toDateString()) {
+            minHour = 9;
+            maxHour = 18;
+          }
+        });
+        
+        if (minHour < 24 && maxHour >= minHour) {
+          const hourHeight = 60;
+          const containerHeight = dayGridRef.current.clientHeight || 600;
+          const targetScrollTop = Math.max(0, minHour * hourHeight - 5);
+          
+          const smoothScrollTo = (element, target, duration = 600) => {
+            const start = element.scrollTop;
+            const startTime = performance.now();
+            
+            const animate = (currentTime) => {
+              const elapsed = currentTime - startTime;
+              const progress = Math.min(elapsed / duration, 1);
+              const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+              const currentPosition = start + (target - start) * easeOutCubic(progress);
+              element.scrollTop = currentPosition;
+              if (progress < 1) {
+                requestAnimationFrame(animate);
+              }
+            };
+            
+            requestAnimationFrame(animate);
+          };
+          
+          smoothScrollTo(dayGridRef.current, targetScrollTop, 600);
+        }
+      }, 100);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [viewType, currentDate]);
 
   // 获取日历数据
   const getMonthData = useCallback(() => {
@@ -90,7 +240,8 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
   const getWeekData = useCallback(() => {
     const startOfWeek = new Date(currentDate);
     const day = startOfWeek.getDay();
-    startOfWeek.setDate(startOfWeek.getDate() - day);
+    const daysFromMonday = day === 0 ? 6 : day - 1;
+    startOfWeek.setDate(startOfWeek.getDate() - daysFromMonday);
     
     const days = [];
     for (let i = 0; i < 7; i++) {
@@ -103,8 +254,12 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
 
   // 获取某天的任务
   const getTasksForDate = useCallback((date) => {
+    const deletedTaskIds = new Set(deletedTasks.map(t => t.id));
+    
     return tasks.filter(task => {
       if (!task.dueDate) return false;
+      if (deletedTaskIds.has(task.id)) return false;
+      
       const taskStartDate = new Date(task.dueDate);
       const taskEndDate = task.endDate ? new Date(task.endDate) : null;
       
@@ -122,7 +277,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       // 如果没有结束日期，只检查开始日期
       return taskStartDate.toDateString() === date.toDateString();
     });
-  }, [tasks]);
+  }, [tasks, deletedTasks]);
 
   // 计算任务在某一天应该显示的时间段
   const getTaskTimeDisplay = useCallback((task, date) => {
@@ -168,7 +323,6 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         newDate.setMonth(newDate.getMonth() - 1);
         break;
       case VIEW_TYPES.WEEK:
-      case VIEW_TYPES.TIMELINE:
         newDate.setDate(newDate.getDate() - 7);
         break;
       case VIEW_TYPES.DAY:
@@ -187,7 +341,6 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         newDate.setMonth(newDate.getMonth() + 1);
         break;
       case VIEW_TYPES.WEEK:
-      case VIEW_TYPES.TIMELINE:
         newDate.setDate(newDate.getDate() + 7);
         break;
       case VIEW_TYPES.DAY:
@@ -328,8 +481,6 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         return `${year}年${weekStart.getMonth() + 1}月`;
       case VIEW_TYPES.DAY:
         return `${year}年${month + 1}月${day}日 ${WEEK_DAYS[currentDate.getDay()]}`;
-      case VIEW_TYPES.TIMELINE:
-        return `${year}年${month + 1}月${day}日 时间线`;
       default:
         return '';
     }
@@ -418,54 +569,136 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
   const renderWeekView = () => {
     const days = getWeekData();
     const today = new Date();
+    const hours = Array.from({ length: 24 }, (_, i) => i);
+    const hourHeight = 60;
+    
+    // 滚动同步处理
+    const handleScaleScroll = (e) => {
+      if (weekBodyRef.current) {
+        weekBodyRef.current.scrollTop = e.target.scrollTop;
+      }
+    };
+    
+    const handleBodyScroll = (e) => {
+      if (weekScaleRef.current) {
+        weekScaleRef.current.scrollTop = e.target.scrollTop;
+      }
+    };
     
     return (
       <div className="calendar-week">
         <div className="calendar-week-header">
+          <div className="calendar-week-time-header"></div>
           {days.map((date, i) => (
             <div 
               key={i} 
               className={`calendar-weekday ${date.toDateString() === today.toDateString() ? 'today' : ''}`}
             >
-              <span className="weekday-name">{WEEK_DAYS[i]}</span>
+              <span className="weekday-name">{WEEK_DAYS[(i + 1) % 7]}</span>
               <span className="weekday-number">{date.getDate()}</span>
             </div>
           ))}
         </div>
-        <div className="calendar-week-grid">
-          {days.map((date, i) => {
-            const dayTasks = getTasksForDate(date);
-            return (
-              <div
-                key={i}
-                className="calendar-week-cell"
+        <div className="calendar-week-body">
+          <div 
+            ref={weekScaleRef}
+            className="calendar-week-scale"
+            onScroll={handleScaleScroll}
+          >
+            {hours.map(hour => (
+              <div 
+                key={hour} 
+                className="calendar-week-hour"
+                style={{ height: hourHeight }}
               >
-                {dayTasks.map(task => {
-                  const taskTag = task.tagIds && task.tagIds.length > 0
-                    ? tags.find(t => t.id === task.tagIds[0])
-                    : null;
-                  const tagColor = taskTag ? taskTag.color : null;
-                  const timeDisplay = getTaskTimeDisplay(task, date);
-                  
-                  return (
-                    <div
-                      key={task.id}
-                      className={`calendar-task ${task.completed ? 'completed' : ''}`}
-                      style={tagColor && !task.completed ? {
-                        backgroundColor: tagColor + '20',
-                        color: tagColor,
-                        borderLeftColor: tagColor
-                      } : {}}
-                    >
-                      <Icon name="circle" size={10} />
-                      <span className="task-time">{timeDisplay}</span>
-                      {task.title}
-                    </div>
-                  );
-                })}
+                <span className="calendar-week-hour-label">{hour.toString().padStart(2, '0')}:00</span>
               </div>
-            );
-          })}
+            ))}
+          </div>
+          <div 
+            ref={weekBodyRef}
+            className="calendar-week-grid"
+            onScroll={handleBodyScroll}
+          >
+            {days.map((date, i) => {
+              const dayTasks = getTasksForDate(date);
+              return (
+                <div
+                  key={i}
+                  className="calendar-week-cell"
+                  style={{ height: hours.length * hourHeight }}
+                >
+                  {dayTasks.map(task => {
+                    const taskTag = task.tagIds && task.tagIds.length > 0
+                      ? tags.find(t => t.id === task.tagIds[0])
+                      : null;
+                    const tagColor = taskTag ? taskTag.color : null;
+                    const timeDisplay = getTaskTimeDisplay(task, date);
+                    
+                    // 计算任务的位置和高度
+                    const startDate = new Date(task.dueDate);
+                    const endDate = task.endDate ? new Date(task.endDate) : new Date(startDate.getTime() + 60 * 60 * 1000);
+                    let startHour = startDate.getHours();
+                    let startMinute = startDate.getMinutes();
+                    let endHour = endDate.getHours();
+                    let endMinute = endDate.getMinutes();
+                    let top = (startHour + startMinute / 60) * hourHeight;
+                    
+                    // 对于跨天任务，调整时间显示
+                    const taskStartDateStr = startDate.toDateString();
+                    const taskEndDateStr = endDate.toDateString();
+                    const currentDateStr = date.toDateString();
+                    
+                    // 如果是跨天任务
+                    if (taskStartDateStr !== taskEndDateStr) {
+                      // 如果是开始日期，结束时间设为18:00
+                      if (currentDateStr === taskStartDateStr) {
+                        endHour = 18;
+                        endMinute = 0;
+                      }
+                      // 如果是中间日期
+                      else if (currentDateStr !== taskStartDateStr && currentDateStr !== taskEndDateStr) {
+                        // 中间天：9:00-18:00
+                        top = (9 * 60 / 60) * hourHeight; // 9:00开始
+                        startHour = 9;
+                        startMinute = 0;
+                        endHour = 18;
+                        endMinute = 0;
+                      } else if (currentDateStr === taskEndDateStr) {
+                        // 结束日期，开始时间设为9:00
+                        top = (9 * 60 / 60) * hourHeight; // 9:00开始
+                        startHour = 9;
+                        startMinute = 0;
+                      }
+                    }
+                    
+                    const duration = (endHour + endMinute / 60) - (startHour + startMinute / 60);
+                    const height = Math.max(duration * hourHeight, 24);
+                    
+                    return (
+                      <div
+                        key={task.id}
+                        className={`calendar-week-task ${task.completed ? 'completed' : ''}`}
+                        style={{ 
+                          top: `${top}px`,
+                          height: `${height}px`,
+                          ...(tagColor && !task.completed ? {
+                            backgroundColor: tagColor + '20',
+                            color: tagColor,
+                            borderLeftColor: tagColor
+                          } : {})
+                        }}
+                      >
+                        <Icon name="circle" size={10} />
+                        <span className="task-time">{timeDisplay}</span>
+                        {task.title}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     );
@@ -475,6 +708,20 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
   const renderDayView = () => {
     const hours = Array.from({ length: 24 }, (_, i) => i);
     const dayTasks = getTasksForDate(currentDate);
+    const hourHeight = 60;
+    
+    // 滚动同步处理
+    const handleScaleScroll = (e) => {
+      if (dayBodyRef.current) {
+        dayBodyRef.current.scrollTop = e.target.scrollTop;
+      }
+    };
+    
+    const handleBodyScroll = (e) => {
+      if (dayTimeScaleRef.current) {
+        dayTimeScaleRef.current.scrollTop = e.target.scrollTop;
+      }
+    };
     
     return (
       <div className="calendar-day">
@@ -482,195 +729,27 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
           <span className="day-date">{currentDate.getDate()}</span>
           <span className="day-week">{WEEK_DAYS[currentDate.getDay()]}</span>
         </div>
-        <div className="calendar-day-grid">
-          {(() => {
-            // 将任务转换为分钟表示
-            const taskTimes = dayTasks
-              .filter(t => t.dueDate)
-              .map(t => {
-                const start = new Date(t.dueDate);
-                const end = t.endDate ? new Date(t.endDate) : new Date(start.getTime() + 60 * 60 * 1000);
-                return {
-                  task: t,
-                  startMinutes: start.getHours() * 60 + start.getMinutes(),
-                  endMinutes: end.getHours() * 60 + end.getMinutes()
-                };
-              })
-              .sort((a, b) => a.startMinutes - b.startMinutes);
-
-            // 使用分层算法分配 track
-            const tracks = []; // tracks[i] = 该 track 最后任务的结束时间
-            
-            taskTimes.forEach(item => {
-              // 找到第一个不重叠的 track
-              let assignedTrack = -1;
-              for (let i = 0; i < tracks.length; i++) {
-                if (tracks[i] <= item.startMinutes) {
-                  assignedTrack = i;
-                  break;
-                }
-              }
-              
-              if (assignedTrack === -1) {
-                // 需要新开一个 track
-                assignedTrack = tracks.length;
-                tracks.push(item.endMinutes);
-              } else {
-                // 使用找到的 track
-                tracks[assignedTrack] = item.endMinutes;
-              }
-              
-              item.track = assignedTrack;
-              item.maxTrack = tracks.length;
-            });
-
-            const maxTracks = tracks.length;
-            const hourHeight = 60; // 每小时高度60px
-
-            // 整体渲染所有任务块（不再按小时分割）
-            const renderTaskBlocks = () => {
-              return taskTimes.map(item => {
-                const { task, startMinutes, endMinutes, track, maxTrack } = item;
-                
-                // 计算整体位置和大小
-                const top = (startMinutes / 60) * hourHeight;
-                
-                // 对于跨天任务，计算调整后的结束时间
-                let displayEndMinutes = endMinutes;
-                let displayStartMinutes = startMinutes;
-                let adjustedTop = top;
-                
-                if (task.endDate) {
-                  const taskStart = new Date(task.dueDate);
-                  const taskEnd = new Date(task.endDate);
-                  const currentDateStr = currentDate.toDateString();
-                  const startDateStr = taskStart.toDateString();
-                  const endDateStr = taskEnd.toDateString();
-                  
-                  // 如果是跨天任务
-                  if (startDateStr !== endDateStr) {
-                    // 如果是开始日期，结束时间设为18:00
-                    if (currentDateStr === startDateStr) {
-                      displayEndMinutes = 18 * 60; // 18:00
-                    }
-                    // 如果是中间日期或结束日期
-                    else if (currentDateStr !== startDateStr && currentDateStr !== endDateStr) {
-                      // 中间天：9:00-18:00
-                      adjustedTop = (9 * 60 / 60) * hourHeight; // 9:00开始
-                      displayStartMinutes = 9 * 60; // 9:00
-                      displayEndMinutes = 18 * 60; // 18:00
-                    } else if (currentDateStr === endDateStr) {
-                      // 结束日期，开始时间设为9:00
-                      adjustedTop = (9 * 60 / 60) * hourHeight; // 9:00开始
-                      displayStartMinutes = 9 * 60; // 9:00
-                    }
-                  }
-                }
-                
-                const height = Math.max(((displayEndMinutes - displayStartMinutes) / 60) * hourHeight, 20);
-                
-                // 计算宽度和偏移
-                const width = 100 / maxTrack;
-                const left = track * width;
-                
-                const taskTag = task.tagIds && task.tagIds.length > 0
-                  ? tags.find(t => t.id === task.tagIds[0])
-                  : null;
-                const tagColor = taskTag ? taskTag.color : null;
-                
-                // 获取该日期应该显示的时间段
-                const timeDisplay = getTaskTimeDisplay(task, currentDate);
-                
-                return (
-                  <div
-                    key={task.id}
-                    className={`calendar-task time-block ${task.completed ? 'completed' : ''}`}
-                    style={{
-                      backgroundColor: tagColor && !task.completed ? tagColor + '20' : undefined,
-                      color: tagColor && !task.completed ? tagColor : undefined,
-                      borderLeftColor: tagColor && !task.completed ? tagColor : undefined,
-                      top: `${adjustedTop}px`,
-                      height: `${height}px`,
-                      left: `${left}%`,
-                      width: `${width}%`,
-                      zIndex: track + 1
-                    }}
-                  >
-                    <Icon name="circle" size={10} />
-                    <span className="task-time">{timeDisplay}</span>
-                    <span className="task-title">{task.title}</span>
-                  </div>
-                );
-              });
-            };
-
-            return (
-              <>
-                <div className="calendar-day-hours">
-                  {hours.map(hour => (
-                    <div key={hour} className="calendar-hour-cell">
-                      <div className="hour-label">{hour.toString().padStart(2, '0')}:00</div>
-                      <div className="hour-tasks" />
-                    </div>
-                  ))}
-                </div>
-                <div className="calendar-day-tasks" style={{ position: 'absolute', top: 0, left: '60px', right: 0, bottom: 0 }}>
-                  {renderTaskBlocks()}
-                </div>
-              </>
-            );
-          })()}
-        </div>
-      </div>
-    );
-  };
-
-  // 渲染时间线视图
-  const renderTimelineView = () => {
-    const hours = Array.from({ length: 24 }, (_, i) => i);
-    const dayTasks = getTasksForDate(currentDate);
-    const timelineHeight = 60;
-    
-    return (
-      <div className="calendar-timeline">
-        <div className="timeline-header">
-          <span className="timeline-date">
-            {currentDate.getMonth() + 1}月{currentDate.getDate()}日
-          </span>
-          <span className="timeline-week">{WEEK_DAYS[currentDate.getDay()]}</span>
-        </div>
-        <div className="timeline-body" style={{ height: hours.length * timelineHeight }}>
-          <div className="timeline-scale">
+        <div ref={dayGridRef} className="calendar-day-grid">
+          <div className="calendar-day-hours">
             {hours.map(hour => (
               <div 
                 key={hour} 
-                className="timeline-hour"
-                style={{ height: timelineHeight }}
+                className="calendar-day-hour"
+                style={{ height: hourHeight }}
               >
-                <span className="hour-marker">{hour.toString().padStart(2, '0')}:00</span>
+                <span className="calendar-day-hour-label">{hour.toString().padStart(2, '0')}:00</span>
               </div>
             ))}
           </div>
-          
-          <div 
-            className="timeline-now"
-            style={{ 
-              top: (new Date().getHours() + new Date().getMinutes() / 60) * timelineHeight 
-            }}
-          >
-            <span className="now-dot">●</span>
-            <span className="now-line"></span>
-          </div>
-          
-          <div className="timeline-tasks">
-            {dayTasks.filter(t => t.dueDate).map(task => {
+          <div className="calendar-day-tasks">
+            {dayTasks.map(task => {
               const startDate = new Date(task.dueDate);
               const endDate = task.endDate ? new Date(task.endDate) : new Date(startDate.getTime() + 60 * 60 * 1000);
               let startHour = startDate.getHours();
               let startMinute = startDate.getMinutes();
               let endHour = endDate.getHours();
               let endMinute = endDate.getMinutes();
-              let top = (startHour + startMinute / 60) * timelineHeight;
+              let top = (startHour + startMinute / 60) * hourHeight;
               
               // 对于跨天任务，调整时间显示
               const taskStartDateStr = startDate.toDateString();
@@ -687,34 +766,44 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
                 // 如果是中间日期
                 else if (currentDateStr !== taskStartDateStr && currentDateStr !== taskEndDateStr) {
                   // 中间天：9:00-18:00
-                  top = (9 * 60 / 60) * timelineHeight; // 9:00开始
+                  top = (9 * 60 / 60) * hourHeight;
                   startHour = 9;
                   startMinute = 0;
                   endHour = 18;
                   endMinute = 0;
                 } else if (currentDateStr === taskEndDateStr) {
                   // 结束日期，开始时间设为9:00
-                  top = (9 * 60 / 60) * timelineHeight; // 9:00开始
+                  top = (9 * 60 / 60) * hourHeight;
                   startHour = 9;
                   startMinute = 0;
                 }
               }
               
-              const duration = (endHour + endMinute / 60) - (startHour + startMinute / 60);
-              const height = Math.max(duration * timelineHeight, 24);
-              
-              // 获取该日期应该显示的时间段
+              const startMinutes = startHour * 60 + startMinute;
+              const endMinutes = endHour * 60 + endMinute;
+              const taskTag = task.tagIds && task.tagIds.length > 0
+                ? tags.find(t => t.id === task.tagIds[0])
+                : null;
+              const tagColor = taskTag ? taskTag.color : null;
               const timeDisplay = getTaskTimeDisplay(task, currentDate);
               
               return (
                 <div
                   key={task.id}
-                  className={`timeline-task ${task.completed ? 'completed' : ''}`}
-                  style={{ top, height }}
+                  className={`calendar-task time-block ${task.completed ? 'completed' : ''}`}
+                  style={{
+                    backgroundColor: tagColor && !task.completed ? tagColor + '20' : undefined,
+                    color: tagColor && !task.completed ? tagColor : undefined,
+                    borderLeftColor: tagColor && !task.completed ? tagColor : undefined,
+                    top: `${top}px`,
+                    height: `${Math.max(((endMinutes - startMinutes) / 60) * hourHeight, 20)}px`,
+                    left: '0',
+                    right: '0',
+                    zIndex: 1
+                  }}
                 >
-                  <span className="task-time">
-                    {timeDisplay}
-                  </span>
+                  <Icon name="circle" size={10} />
+                  <span className="task-time">{timeDisplay}</span>
                   <span className="task-title">{task.title}</span>
                 </div>
               );
@@ -734,8 +823,6 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         return renderWeekView();
       case VIEW_TYPES.DAY:
         return renderDayView();
-      case VIEW_TYPES.TIMELINE:
-        return renderTimelineView();
       default:
         return null;
     }
@@ -780,13 +867,6 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
           >
             <Icon name="calendar" size={14} />
             日
-          </button>
-          <button 
-            className={`view-btn ${viewType === VIEW_TYPES.TIMELINE ? 'active' : ''}`}
-            onClick={() => setViewType(VIEW_TYPES.TIMELINE)}
-          >
-            <Icon name="gantt-chart" size={14} />
-            时间线
           </button>
         </div>
 
