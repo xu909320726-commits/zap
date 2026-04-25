@@ -4131,6 +4131,43 @@ body {
   overflow: hidden;
 }
 
+.calendar-slide {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.calendar-slide.slide-left {
+  animation: slideLeft 300ms ease-out forwards;
+}
+
+.calendar-slide.slide-right {
+  animation: slideRight 300ms ease-out forwards;
+}
+
+@keyframes slideLeft {
+  0% {
+    transform: translateX(30px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+@keyframes slideRight {
+  0% {
+    transform: translateX(-30px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
 .calendar-header {
   display: flex;
   align-items: center;

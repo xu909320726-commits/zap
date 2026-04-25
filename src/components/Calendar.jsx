@@ -22,11 +22,13 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState(VIEW_TYPES.MONTH);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [slideDirection, setSlideDirection] = useState('none');
   const weekBodyRef = useRef(null);
   const weekScaleRef = useRef(null);
   const dayTimeScaleRef = useRef(null);
   const dayBodyRef = useRef(null);
   const dayGridRef = useRef(null);
+  const monthGridRef = useRef(null);
 
   // 初始化 Lucide 图标
   useEffect(() => {
@@ -91,7 +93,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
           const hourHeight = 60;
           const containerHeight = weekBodyRef.current.clientHeight || 600;
           const midHour = (minHour + maxHour) / 2;
-          const targetScrollTop = Math.max(0, (midHour * hourHeight) - (containerHeight / 2) + (hourHeight / 2));
+          const targetScrollTop = Math.max(0, minHour * hourHeight - 5);
           
           // 平滑滚动函数
           const smoothScrollTo = (element, target, duration = 500) => {
@@ -317,6 +319,8 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
 
   // 导航操作
   const navigatePrev = () => {
+    if (slideDirection !== 'none') return;
+    
     const newDate = new Date(currentDate);
     switch (viewType) {
       case VIEW_TYPES.MONTH:
@@ -331,10 +335,19 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       default:
         break;
     }
-    setCurrentDate(newDate);
+    
+    setSlideDirection('slide-right');
+    setTimeout(() => {
+      setCurrentDate(newDate);
+      setTimeout(() => {
+        setSlideDirection('none');
+      }, 300);
+    }, 20);
   };
 
   const navigateNext = () => {
+    if (slideDirection !== 'none') return;
+    
     const newDate = new Date(currentDate);
     switch (viewType) {
       case VIEW_TYPES.MONTH:
@@ -349,11 +362,99 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       default:
         break;
     }
-    setCurrentDate(newDate);
+    
+    setSlideDirection('slide-left');
+    setTimeout(() => {
+      setCurrentDate(newDate);
+      setTimeout(() => {
+        setSlideDirection('none');
+      }, 300);
+    }, 20);
+  };
+
+  const easeOutCubic = (t) => 1 - Math.pow(1 - t, 3);
+
+  const smoothScrollTo = (element, targetScroll, duration, isHorizontal = false) => {
+    if (!element) return;
+    const property = isHorizontal ? 'scrollLeft' : 'scrollTop';
+    const startScroll = element[property];
+    const diff = targetScroll - startScroll;
+    const startTime = performance.now();
+    
+    const animateScroll = (currentTime) => {
+      const elapsed = currentTime - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      const easeProgress = easeOutCubic(progress);
+      element[property] = startScroll + diff * easeProgress;
+      
+      if (progress < 1) {
+        requestAnimationFrame(animateScroll);
+      }
+    };
+    
+    requestAnimationFrame(animateScroll);
   };
 
   const goToToday = () => {
-    setCurrentDate(new Date());
+    if (slideDirection !== 'none') return;
+
+    const today = new Date();
+    const todayMonth = today.getMonth();
+    const todayYear = today.getFullYear();
+    const currentMonth = currentDate.getMonth();
+    const currentYear = currentDate.getFullYear();
+
+    let direction = 'none';
+    if (viewType === VIEW_TYPES.MONTH) {
+      if (todayYear < currentYear || (todayYear === currentYear && todayMonth < currentMonth)) {
+        direction = 'slide-right';
+      } else if (todayYear > currentYear || (todayYear === currentYear && todayMonth > currentMonth)) {
+        direction = 'slide-left';
+      }
+    } else {
+      if (today < currentDate) {
+        direction = 'slide-right';
+      } else if (today > currentDate) {
+        direction = 'slide-left';
+      }
+    }
+
+    if (direction !== 'none') {
+      setSlideDirection(direction);
+      setTimeout(() => {
+        setCurrentDate(today);
+        setTimeout(() => {
+          setSlideDirection('none');
+        }, 300);
+      }, 20);
+    } else {
+      setCurrentDate(today);
+      setTimeout(() => {
+        if (viewType === VIEW_TYPES.MONTH && monthGridRef.current) {
+          const todayCell = monthGridRef.current.querySelector('.today');
+          if (todayCell) {
+            const containerHeight = monthGridRef.current.clientHeight;
+            const cellTop = todayCell.offsetTop;
+            const targetScrollTop = cellTop - containerHeight / 2 + todayCell.clientHeight / 2;
+            smoothScrollTo(monthGridRef.current, Math.max(0, targetScrollTop), 600);
+          }
+        } else if (viewType === VIEW_TYPES.WEEK && weekBodyRef.current) {
+          const days = getWeekData();
+          const todayIndex = days.findIndex(d => d.toDateString() === today.toDateString());
+          if (todayIndex !== -1) {
+            const containerWidth = weekBodyRef.current.clientWidth;
+            const cellWidth = containerWidth / 7;
+            const targetScrollLeft = todayIndex * cellWidth - containerWidth / 2 + cellWidth / 2;
+            smoothScrollTo(weekBodyRef.current, Math.max(0, targetScrollLeft), 600, true);
+          }
+        } else if (viewType === VIEW_TYPES.DAY && dayGridRef.current) {
+          const hourHeight = 60;
+          const currentHour = today.getHours();
+          const targetScrollTop = currentHour * hourHeight - 60;
+          smoothScrollTo(dayGridRef.current, Math.max(0, targetScrollTop), 600);
+        }
+      }, 50);
+    }
   };
 
   const getTasksInDateRange = useCallback((startDate, endDate) => {
@@ -364,8 +465,13 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
 
     return tasks.filter(task => {
       if (!task.dueDate) return false;
-      const taskDate = new Date(task.dueDate);
-      return taskDate >= start && taskDate <= end;
+      
+      const taskStart = new Date(task.dueDate);
+      const taskEnd = task.endDate ? new Date(task.endDate) : taskStart;
+      
+      // 检查任务时间范围是否与导出时间范围有重叠
+      // 任务开始时间 <= 导出结束时间 且 任务结束时间 >= 导出开始时间
+      return taskStart <= end && taskEnd >= start;
     });
   }, [tasks]);
 
@@ -501,7 +607,7 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
             <div key={i} className="calendar-weekday">{day}</div>
           ))}
         </div>
-        <div className="calendar-grid">
+        <div ref={monthGridRef} className="calendar-grid">
           {days.map((dayData, index) => {
             const dayTasks = getTasksForDate(dayData.date);
             const isToday = dayData.date.toDateString() === today.toDateString();
@@ -849,21 +955,30 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         <div className="view-switcher">
           <button 
             className={`view-btn ${viewType === VIEW_TYPES.MONTH ? 'active' : ''}`}
-            onClick={() => setViewType(VIEW_TYPES.MONTH)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewType(VIEW_TYPES.MONTH);
+            }}
           >
             <Icon name="calendar" size={14} />
             月
           </button>
           <button 
             className={`view-btn ${viewType === VIEW_TYPES.WEEK ? 'active' : ''}`}
-            onClick={() => setViewType(VIEW_TYPES.WEEK)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewType(VIEW_TYPES.WEEK);
+            }}
           >
             <Icon name="calendar-days" size={14} />
             周
           </button>
           <button 
             className={`view-btn ${viewType === VIEW_TYPES.DAY ? 'active' : ''}`}
-            onClick={() => setViewType(VIEW_TYPES.DAY)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setViewType(VIEW_TYPES.DAY);
+            }}
           >
             <Icon name="calendar" size={14} />
             日
@@ -881,7 +996,9 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       </div>
       
       <div className="calendar-content">
-        {renderCurrentView()}
+        <div className={`calendar-slide ${slideDirection}`}>
+          {renderCurrentView()}
+        </div>
       </div>
 
       <ExportModal
