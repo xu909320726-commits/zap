@@ -103,6 +103,64 @@ ipcMain.on('open-external', (event, url) => {
   }
 });
 
+// 主进程代发 HTTP 请求，绕过浏览器 CORS 限制
+ipcMain.handle('http-request', async (event, options) => {
+  const { url, method = 'GET', headers = {}, body = null, timeout = 30000 } = options || {};
+  if (!url) {
+    return { ok: false, error: 'URL 不能为空' };
+  }
+
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(url);
+  } catch (e) {
+    return { ok: false, error: 'URL 格式无效' };
+  }
+
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return { ok: false, error: '仅支持 http/https 协议' };
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+
+  try {
+    const response = await fetch(url, {
+      method,
+      headers,
+      body: body || undefined,
+      signal: controller.signal,
+    });
+
+    const contentType = response.headers.get('content-type') || '';
+    let data;
+    if (contentType.includes('application/json')) {
+      try {
+        data = await response.json();
+      } catch (e) {
+        data = await response.text();
+      }
+    } else {
+      data = await response.text();
+    }
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+      contentType,
+      data,
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err.name === 'AbortError' ? `请求超时（${timeout}ms）` : (err.message || '网络请求失败'),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+});
+
 ipcMain.handle('window-is-maximized', () => {
   return mainWindow ? mainWindow.isMaximized() : false;
 });

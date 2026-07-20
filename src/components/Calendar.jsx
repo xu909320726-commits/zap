@@ -3,7 +3,8 @@ import { useStore } from '../hooks/useStore';
 import { formatDueDate } from '../utils/dateParser';
 import Icon from './Icon';
 import ExportModal from './ExportModal';
-import * as XLSX from 'xlsx';
+import FeishuImportModal from './FeishuImportModal';
+import ExcelJS from 'exceljs';
 
 const MAX_EXPORT_DAYS = 30;
 
@@ -17,11 +18,12 @@ const VIEW_TYPES = {
   DAY: 'day'
 };
 
-function Calendar({ onClose, highlightedTaskId, showToast }) {
-  const { tasks, updateTask, tags, deletedTasks } = useStore();
+function Calendar({ onClose, highlightedTaskId, showToast, onTaskImported }) {
+  const { tasks, updateTask, tags, deletedTasks, addTask } = useStore();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewType, setViewType] = useState(VIEW_TYPES.MONTH);
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showFeishuImport, setShowFeishuImport] = useState(false);
   const [slideDirection, setSlideDirection] = useState('none');
   const weekBodyRef = useRef(null);
   const weekScaleRef = useRef(null);
@@ -475,6 +477,138 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
     });
   }, [tasks]);
 
+  // 按日期分组任务并平均分配时间（9:00-18:00）
+  // 支持跨天任务展开到每一天，并在同一天按任务名称去重
+  // 根据日期自动判断任务完成状态：
+  // - 单一日期任务：如果日期 < 今天，标记为已完成
+  // - 时间段任务：如果结束日期 >= 今天，保持待办状态
+  // 多次导入去重：检查已存在任务，按日期+任务名称维度去重
+  const allocateTasksByDate = useCallback((feishuTasks, existingTasks = []) => {
+    if (!Array.isArray(feishuTasks) || feishuTasks.length === 0) {
+      return { allocatedTasks: [], duplicateCount: 0, duplicateDetails: [] };
+    }
+
+    const allocatedTasks = [];
+    const workStartHour = 9;
+    const workEndHour = 18;
+    const workDurationHours = workEndHour - workStartHour;
+
+    // 获取今天的日期（0点）
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // 构建已存在任务的去重键：日期 + 任务名称
+    const existingTaskKeys = new Set();
+    existingTasks.forEach(task => {
+      if (!task.dueDate || !task.title) return;
+      const dateKey = new Date(task.dueDate).toDateString();
+      existingTaskKeys.add(`${dateKey}||${task.title}`);
+    });
+
+    // 统计重复任务
+    const duplicateDetails = [];
+    let duplicateCount = 0;
+
+    // 按日期分组，展开跨天任务到每一天
+    const groupedByDate = {};
+    
+    feishuTasks.forEach(task => {
+      const startTsNum = task.startTs ? Number(task.startTs) : null;
+      const endTsNum = task.endTs ? Number(task.endTs) : startTsNum;
+      const startTs = startTsNum ? (startTsNum < 1e12 ? startTsNum * 1000 : startTsNum) : null;
+      const endTs = endTsNum ? (endTsNum < 1e12 ? endTsNum * 1000 : endTsNum) : startTs;
+      
+      if (!startTs) return;
+      
+      const startDate = new Date(startTs);
+      const endDate = endTs ? new Date(endTs) : startDate;
+      
+      // 设置为当天0点0分0秒0毫秒，用于日期比较
+      let currentDate = new Date(startDate);
+      currentDate.setHours(0, 0, 0, 0);
+      
+      const endDateMidnight = new Date(endDate);
+      endDateMidnight.setHours(0, 0, 0, 0);
+      
+      // 遍历日期范围，包括开始和结束日期
+      while (currentDate <= endDateMidnight) {
+        const dateKey = currentDate.toDateString();
+        
+        // 检查是否与已存在任务重复（日期+任务名称）
+        // 仅跳过当前这一天，跨天任务的其余日期仍需导入
+        const duplicateKey = `${dateKey}||${task.name}`;
+        if (existingTaskKeys.has(duplicateKey)) {
+          if (!duplicateDetails.find(d => d.date === dateKey && d.name === task.name)) {
+            duplicateDetails.push({ date: dateKey, name: task.name });
+            duplicateCount++;
+          }
+          // 跳过当前这一天，跨天任务的其余日期继续处理
+          currentDate.setDate(currentDate.getDate() + 1);
+          continue;
+        }
+        
+        if (!groupedByDate[dateKey]) {
+          groupedByDate[dateKey] = [];
+        }
+        groupedByDate[dateKey].push({
+          ...task,
+          originalEndDate: endDateMidnight,
+        });
+        
+        // 增加一天
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+    });
+
+    // 处理每组日期的任务：去重 + 时间分配
+    Object.entries(groupedByDate).forEach(([dateKey, dateTasks]) => {
+      // 按任务名称去重（同一天相同名称只保留一个，本次导入内部去重）
+      const seen = new Set();
+      const uniqueTasks = dateTasks.filter(task => {
+        if (seen.has(task.name)) return false;
+        seen.add(task.name);
+        return true;
+      });
+
+      const taskCount = uniqueTasks.length;
+      if (taskCount === 0) return;
+
+      // 获取日期基准时间
+      const baseDate = new Date(dateKey);
+      baseDate.setHours(0, 0, 0, 0);
+
+      // 计算每个任务的时间片
+      const sliceDurationMinutes = (workDurationHours * 60) / taskCount;
+
+      uniqueTasks.forEach((task, index) => {
+        const startMinutes = workStartHour * 60 + index * sliceDurationMinutes;
+        const endMinutes = startMinutes + sliceDurationMinutes;
+
+        const startDate = new Date(baseDate.getTime() + startMinutes * 60 * 1000);
+        const endDate = new Date(baseDate.getTime() + endMinutes * 60 * 1000);
+
+        // 判断任务是否已完成：
+        // - 单一日期任务（无结束日期或结束日期等于开始日期）：如果日期 < 今天，标记为已完成
+        // - 时间段任务（有结束日期且结束日期 > 开始日期）：如果结束日期 < 今天，标记为已完成
+        const startTsNum = task.startTs ? Number(task.startTs) : null;
+        const endTsNum = task.endTs ? Number(task.endTs) : null;
+        const hasEndDate = endTsNum && endTsNum !== startTsNum;
+        const isCompleted = hasEndDate 
+          ? (task.originalEndDate < today) 
+          : (baseDate < today);
+
+        allocatedTasks.push({
+          ...task,
+          allocatedStart: startDate.toISOString(),
+          allocatedEnd: endDate.toISOString(),
+          completed: isCompleted,
+        });
+      });
+    });
+
+    return { allocatedTasks, duplicateCount, duplicateDetails };
+  }, []);
+
   const handleExport = async ({ startDate, endDate }) => {
     const tasksInRange = getTasksInDateRange(startDate, endDate);
 
@@ -483,90 +617,132 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
       return;
     }
 
-    const data = tasksInRange.map(task => {
-      const modifications = task.modifications || [];
-      const modificationRecords = modifications.map(m => {
+    // 按任务标题去重（相同标题只保留第一条）
+    const dedupedTasks = [];
+    const seenTitles = new Set();
+    let dedupedCount = 0;
+    tasksInRange.forEach((task) => {
+      const title = task.title || '';
+      if (seenTitles.has(title)) {
+        dedupedCount++;
+        return;
+      }
+      seenTitles.add(title);
+      dedupedTasks.push(task);
+    });
+
+    if (dedupedTasks.length === 0) {
+      showToast('所选时间段内没有任务', 'warning');
+      return;
+    }
+
+    // 格式化辅助函数
+    const fmtDate = (dateStr) => {
+      if (!dateStr) return '';
+      const d = new Date(dateStr);
+      return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+    };
+    const fmtDateRange = (dueDate, endDate) => {
+      if (!dueDate) return '';
+      const due = new Date(dueDate);
+      const dueStr = fmtDate(dueDate);
+      if (!endDate) return dueStr;
+      const end = new Date(endDate);
+      if (due.toDateString() === end.toDateString()) {
+        return dueStr;
+      }
+      return `${dueStr} ~ ${fmtDate(endDate)}`;
+    };
+    const fmtModifications = (modifications) => {
+      return (modifications || []).map(m => {
         const date = new Date(m.modifiedAt);
         const dateStr = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}-${date.getDate().toString().padStart(2, '0')} ${date.getHours().toString().padStart(2, '0')}:${date.getMinutes().toString().padStart(2, '0')}`;
         return `[${dateStr}] ${m.reason || '(无原因)'} - ${m.changes || '(无变更)'}`;
       }).join('\n');
+    };
 
-      const formatDate = (dateStr) => {
-        if (!dateStr) return '';
-        const d = new Date(dateStr);
-        return `${d.getFullYear()}-${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
-      };
-
-      const formatDateRange = (dueDate, endDate) => {
-        if (!dueDate) return '';
-        const due = new Date(dueDate);
-        const dueStr = formatDate(dueDate);
-        if (!endDate) return dueStr;
-        const end = new Date(endDate);
-        if (due.toDateString() === end.toDateString()) {
-          return dueStr;
-        }
-        return `${dueStr} ~ ${formatDate(endDate)}`;
-      };
-
-      const taskData = {
-        '日期': formatDateRange(task.dueDate, task.endDate),
-        '任务名称': task.title,
-        '备注': task.note || '',
-        '修改记录': modificationRecords || ''
-      };
-      if (task.linkUrl) {
-        taskData['任务名称'] = { v: task.title, l: { Target: task.linkUrl } };
-      }
-      return taskData;
-    });
-
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, '任务导出');
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('任务导出');
 
     const keys = ['日期', '任务名称', '备注', '修改记录'];
-    const cols = keys.map((key, i) => {
+
+    // 计算列宽
+    const cols = keys.map((key) => {
       let maxLen = key.length;
-      data.forEach(row => {
-        const val = String(row[key]?.v || row[key] || '');
-        const lines = val.split('\n');
-        lines.forEach(line => {
-          maxLen = Math.max(maxLen, line.length);
-        });
-      });
-      return { wch: Math.min(Math.max(maxLen + 2, 10), 80) };
-    });
-    ws['!cols'] = cols;
-
-    const range = XLSX.utils.decode_range(ws['!ref']);
-    const rows = [];
-    for (let R = range.s.r; R <= range.e.r; R++) {
-      rows.push({ hpt: 30 });
-    }
-    ws['!rows'] = rows;
-
-    for (let R = range.s.r; R <= range.e.r; R++) {
-      for (let C = range.s.c; C <= range.e.c; C++) {
-        const cell = ws[XLSX.utils.encode_cell({ r: R, c: C })];
-        if (cell) {
-          cell.s = {
-            alignment: {
-              vertical: 'center',
-              wrapText: true
-            }
-          };
+      dedupedTasks.forEach((task) => {
+        if (key === '日期') {
+          const val = fmtDateRange(task.dueDate, task.endDate);
+          maxLen = Math.max(maxLen, val.length);
+        } else if (key === '任务名称') {
+          maxLen = Math.max(maxLen, (task.title || '').length);
+        } else if (key === '备注') {
+          const lines = (task.note || '').split('\n');
+          lines.forEach(line => {
+            maxLen = Math.max(maxLen, line.length);
+          });
+        } else if (key === '修改记录') {
+          const lines = fmtModifications(task.modifications).split('\n');
+          lines.forEach(line => {
+            maxLen = Math.max(maxLen, line.length);
+          });
         }
+      });
+      return { width: Math.min(Math.max(maxLen + 2, 10), 60) };
+    });
+
+    // 写表头
+    const headerRow = ws.addRow(keys);
+    headerRow.font = { name: '等线', size: 10, bold: true };
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+    headerRow.height = 22;
+
+    // 设置列宽
+    keys.forEach((_, i) => {
+      ws.getColumn(i + 1).width = cols[i].width;
+    });
+
+    // 写数据
+    dedupedTasks.forEach((task) => {
+      const row = ws.addRow([
+        fmtDateRange(task.dueDate, task.endDate),
+        task.title || '',
+        task.note || '',
+        fmtModifications(task.modifications) || '',
+      ]);
+
+      // 设置每一行的样式：字体 等线 10
+      row.font = { name: '等线', size: 10 };
+      row.alignment = { vertical: 'middle', wrapText: true };
+
+      // 如果有链接，给任务名称单元格加超链接
+      if (task.linkUrl) {
+        const titleCell = row.getCell(2);
+        titleCell.value = {
+          text: task.title,
+          hyperlink: task.linkUrl,
+        };
+        titleCell.font = { name: '等线', size: 10, color: { argb: 'FF0563C1' }, underline: true };
       }
-    }
+    });
 
     const startFormatted = startDate.replace(/-/g, '');
     const endFormatted = endDate.replace(/-/g, '');
     const filename = `zap_tasks_${startFormatted}_${endFormatted}.xlsx`;
 
-    XLSX.writeFile(wb, filename);
+    // 在浏览器环境中使用 writeBuffer 创建下载
+    const buffer = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
 
-    showToast(`导出成功，共 ${tasksInRange.length} 条任务`, 'success');
+    const dedupMsg = dedupedCount > 0 ? `（已按标题去重 ${dedupedCount} 条）` : '';
+    showToast(`导出成功，共 ${dedupedTasks.length} 条任务${dedupMsg}`, 'success');
   };
 
   // 获取视图标题
@@ -985,13 +1161,22 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
           </button>
         </div>
 
-        <button 
+        <button
           className="export-btn"
           onClick={() => setShowExportModal(true)}
           title="导出任务"
         >
           <Icon name="download" size={14} />
           导出
+        </button>
+
+        <button
+          className="export-btn feishu-import-btn"
+          onClick={() => setShowFeishuImport(true)}
+          title="导入飞书项目"
+        >
+          <Icon name="cloud-download" size={14} />
+          导入飞书
         </button>
       </div>
       
@@ -1005,6 +1190,109 @@ function Calendar({ onClose, highlightedTaskId, showToast }) {
         isOpen={showExportModal}
         onExport={handleExport}
         onCancel={() => setShowExportModal(false)}
+      />
+
+      <FeishuImportModal
+        isOpen={showFeishuImport}
+        onCancel={() => setShowFeishuImport(false)}
+        onImport={async (task) => {
+          try {
+            // 批量导入模式：接收 { tasks, targetListId, mode: 'batch' }
+            if (task.mode === 'batch' && Array.isArray(task.tasks)) {
+              const { tasks: feishuTasks, targetListId } = task;
+              
+              // 按日期分组并平均分配时间（9:00-18:00），传入已存在任务去重
+              const { allocatedTasks, duplicateCount, duplicateDetails } = allocateTasksByDate(feishuTasks, tasks);
+
+              // 批量创建任务
+              for (const t of allocatedTasks) {
+                const noteLines = [
+                  t.url ? `飞书链接：${t.url}` : null,
+                  t.assignee ? `负责人：${t.assignee}` : null,
+                  t.storyId ? `Story ID：${t.storyId}` : null,
+                ].filter(Boolean).join('\n');
+
+                const listId = targetListId || 'todo';
+
+                await addTask(
+                  t.name || '未命名任务',
+                  listId,
+                  t.allocatedStart,
+                  t.allocatedEnd,
+                  [],
+                  t.url || null,
+                  noteLines || null,
+                  t.completed
+                );
+              }
+
+              // 显示重复任务提示
+              if (duplicateCount > 0) {
+                const duplicateMsg = duplicateDetails.slice(0, 5).map(d => `${d.date}: ${d.name}`).join('\n');
+                const moreMsg = duplicateDetails.length > 5 ? `\n...还有 ${duplicateDetails.length - 5} 条重复任务` : '';
+                showToast(`检测到 ${duplicateCount} 条重复任务（已跳过）：\n${duplicateMsg}${moreMsg}`, 'warning');
+              }
+
+              // 通知 App 端：从数据库重新加载 tasks，保证待办视图立刻看到新任务
+              if (onTaskImported) {
+                await onTaskImported({ count: allocatedTasks.length });
+              }
+
+              return { acknowledged: true };
+            }
+
+            // 单任务导入模式（兼容旧回调）
+            // task: { name, storyId, url, startTime, endTime, assignee, _targetListId, ... }
+            // 转换时间戳为 ISO 字符串（addTask 内部已支持 Date/ISO）
+            // 注意：飞书甘特图返回的 start/end 是秒级时间戳
+            const startTs = task.startTs ? (task.startTs < 1e12 ? task.startTs * 1000 : task.startTs) : null;
+            const endTs = task.endTs ? (task.endTs < 1e12 ? task.endTs * 1000 : task.endTs) : null;
+            const startDate = startTs ? new Date(startTs).toISOString() : null;
+            const endDate = endTs ? new Date(endTs).toISOString() : null;
+
+            const noteLines = [
+              task.url ? `飞书链接：${task.url}` : null,
+              task.assignee ? `负责人：${task.assignee}` : null,
+              task.storyId ? `Story ID：${task.storyId}` : null,
+            ].filter(Boolean).join('\n');
+
+            // 使用 Modal 中选择的目标列表（默认 'todo'）
+            const listId = task._targetListId || 'todo';
+
+            const taskParams = {
+              title: task.name || '未命名任务',
+              listId,
+              dueDate: startDate,
+              endDate,
+              tagIds: [],
+              linkUrl: task.url || null,
+              note: noteLines || null,
+            };
+
+            // 仅调用本地 addTask：
+            // Calendar 内部的 useStore() 维护独立的 tasks state，
+            // 同时它自己写入数据库。App 的 useStore 是另一个实例，
+            // 我们通过父组件 onTaskImported 让 App 重新从 DB 拉取最新 tasks。
+            await addTask(
+              taskParams.title,
+              taskParams.listId,
+              taskParams.dueDate,
+              taskParams.endDate,
+              taskParams.tagIds,
+              taskParams.linkUrl,
+              taskParams.note
+            );
+            // 通知 App 端：从数据库重新加载 tasks，保证待办视图立刻看到新任务
+            if (onTaskImported) {
+              await onTaskImported(taskParams);
+            }
+            return true;
+          } catch (err) {
+            console.error('导入飞书任务失败:', err);
+            throw err;
+          }
+        }}
+        showToast={showToast}
       />
     </div>
   );

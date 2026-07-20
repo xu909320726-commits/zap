@@ -34,5 +34,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     if (url) {
       ipcRenderer.send('open-external', url);
     }
-  }
+  },
+
+  // 主进程代发 HTTP 请求，绕过 CORS
+  httpRequest: (options) => ipcRenderer.invoke('http-request', options),
 });

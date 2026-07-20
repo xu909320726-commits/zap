@@ -1,5 +1,6 @@
 node_modules/
 dist/
+build/
 *.exe
 *.asar
 *.dmg
@@ -7,3 +8,4 @@ dist/
 *.rpm
 .DS_Store
 Thumbs.db
+test_export.xlsx

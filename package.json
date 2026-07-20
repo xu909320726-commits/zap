@@ -1,6 +1,6 @@
 {
   "name": "zap-app",
-  "version": "2026.04.25.1036",
+  "version": "2026.07.17.1632",
   "description": "Zap - 闪电般快速的待办事项应用",
   "main": "main.js",
   "scripts": {
@@ -30,17 +30,16 @@
     }
   },
   "dependencies": {
-    "@toast-ui/editor": "^3.2.2",
-    "@toast-ui/react-editor": "^3.2.3",
     "electron-store": "^8.1.0",
+    "exceljs": "^4.4.0",
     "flatpickr": "^4.6.13",
     "framer-motion": "^12.38.0",
-    "marked": "^4.3.0",
+    "highlight.js": "^11.11.1",
+    "quill": "^2.0.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
-    "react-markdown": "^10.1.0",
+    "react-quill": "^2.0.0",
     "react-scripts": "5.0.1",
-    "remark-gfm": "^4.0.1",
     "sql.js": "^1.14.1",
     "uuid": "^9.0.0",
     "xlsx": "^0.18.5"

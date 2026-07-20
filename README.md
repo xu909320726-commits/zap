@@ -15,17 +15,18 @@
 - 删除原因记录
 
 ### 笔记系统
-- Markdown 笔记编辑器（轻量级自定义实现）
-- 实时预览（Typora 风格）
-- 工具栏快捷操作
+- 富文本笔记编辑器（基于 Quill）
+- 所见即所得编辑体验
+- 丰富的格式支持
   - 标题（H1/H2/H3）
-  - 加粗、斜体、删除线
+  - 加粗、斜体、下划线、删除线
   - 引用、无序列表、有序列表
   - 行内代码、代码块
-  - 链接、分割线
+  - 链接、图片
+  - 文字颜色、背景色
 - 快捷键支持
-  - `Ctrl+B`：加粗 / 取消加粗
-  - `Ctrl+I`：斜体 / 取消斜体
+  - `Ctrl+S`：保存笔记
+  - `Esc`：关闭编辑器
 - 瀑布流卡片布局 / 列表视图切换
 - 笔记搜索
 
@@ -48,7 +49,7 @@
 - **前端**：React 18, react-scripts
 - **桌面框架**：Electron 28
 - **数据存储**：sql.js (SQLite in WASM), electron-store
-- **Markdown**：react-markdown, remark-gfm
+- **富文本编辑器**：react-quill, quill
 - **日期处理**：flatpickr
 - **导出**：xlsx (SheetJS)
 - **构建工具**：electron-builder

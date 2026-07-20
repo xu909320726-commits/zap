@@ -69,7 +69,8 @@ function App() {
     searchTasks,
     addTag,
     updateTag,
-    deleteTag
+    deleteTag,
+    reloadTasks,
   } = useStore();
 
   // 数据加载完成后隐藏 loading
@@ -116,6 +117,19 @@ function App() {
   const menuSectionRef = useRef(null);
   const activeItemRef = useRef('todo');
   const pendingIndicatorUpdateRef = useRef(null);
+  const reloadTasksTimerRef = useRef(null);
+  // 批量调度：多次连续 import 只触发一次 DB 重新拉取
+  const scheduleReloadTasks = useCallback(() => {
+    if (reloadTasksTimerRef.current) return; // 已有待执行任务，跳过
+    reloadTasksTimerRef.current = setTimeout(async () => {
+      reloadTasksTimerRef.current = null;
+      try {
+        if (reloadTasks) await reloadTasks();
+      } catch (e) {
+        console.error('reloadTasks failed:', e);
+      }
+    }, 50);
+  }, [reloadTasks]);
   const [indicatorStyle, setIndicatorStyle] = useState({ transform: 'translateX(-100%)', width: '0px', height: '0px', opacity: 0 });
   const menuItemRefs = useRef({});
   const [menuSelectedItems, setMenuSelectedItems] = useState({
@@ -161,7 +175,9 @@ function App() {
   const [isPulling, setIsPulling] = useState(false);
   const [isPushing, setIsPushing] = useState(false);
   const [showTokenModal, setShowTokenModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   const [tokenInput, setTokenInput] = useState('');
+
   const [completedFilterDate, setCompletedFilterDate] = useState(() => {
     const today = new Date();
     return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
@@ -744,6 +760,201 @@ function App() {
     }
   };
 
+  // 直接显示导入模态框
+  const showImportModalDirect = () => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.style.cssText = `
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+    `;
+
+    const modal = document.createElement('div');
+    modal.style.cssText = `
+      background: white;
+      border-radius: 16px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    `;
+
+    modal.innerHTML = `
+      <h3 style="margin-top: 0; margin-bottom: 16px;">导入本地备份</h3>
+      <p style="font-size: 13px; color: #6B7280; margin-bottom: 16px;">选择之前导出的 zap-backup-latest.json 文件进行导入</p>
+      <button id="import-file-btn" style="
+        width: 100%;
+        padding: 12px;
+        background: #6366F1;
+        color: white;
+        border: none;
+        border-radius: 8px;
+        cursor: pointer;
+        font-size: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      ">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        选择 JSON 文件
+      </button>
+      <p style="margin-top: 16px; font-size: 13px; color: #F59E0B;">注意：导入会覆盖本地现有数据</p>
+      <div style="display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end;">
+        <button id="import-cancel-btn" style="
+          padding: 8px 16px;
+          background: #F3F4F6;
+          color: #374151;
+          border: none;
+          border-radius: 6px;
+          cursor: pointer;
+          font-size: 14px;
+        ">取消</button>
+      </div>
+    `;
+
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const closeModal = () => {
+      document.body.removeChild(overlay);
+    };
+
+    overlay.addEventListener('click', (e) => {
+      if (e.target === overlay) closeModal();
+    });
+
+    document.getElementById('import-cancel-btn').addEventListener('click', closeModal);
+
+    document.getElementById('import-file-btn').addEventListener('click', () => {
+      const input = document.createElement('input');
+      input.type = 'file';
+      input.accept = '.json';
+      input.onchange = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+
+        if (!file.name.endsWith('.json')) {
+          alert('请选择 JSON 文件');
+          return;
+        }
+
+        try {
+          const text = await file.text();
+          const data = JSON.parse(text);
+
+          if (!data.lists || !data.tasks || !data.tags) {
+            alert('无效的备份文件格式');
+            return;
+          }
+
+          if (data.notes && Array.isArray(data.notes)) {
+            data.notes = data.notes.map(note => ({
+              ...note,
+              content: note.content ? note.content.replace(/!\[([^\]]*)\]\(data:image\/[^;]+;base64,[^)]+\)/g, '![$1][图片已移除]') : note.content
+            }));
+          }
+
+          localStorage.setItem('todo-data-v2', JSON.stringify(data));
+          alert('导入成功，页面将重新加载');
+          window.location.reload();
+        } catch (err) {
+          alert('文件解析失败: ' + err.message);
+        }
+      };
+      input.click();
+    });
+  };
+
+  // 本地导入 JSON 文件
+  const handleImport = async (data) => {
+    try {
+      const DB_KEY = 'todo-data-v2';
+      if (data.notes && Array.isArray(data.notes)) {
+        data.notes = data.notes.map(note => ({
+          ...note,
+          content: note.content ? note.content.replace(/!\[([^\]]*)\]\(data:image\/[^;]+;base64,[^)]+\)/g, '![$1][图片已移除]') : note.content
+        }));
+      }
+      localStorage.setItem(DB_KEY, JSON.stringify(data));
+      showToast('导入成功，页面将重新加载');
+      window.location.reload();
+    } catch (error) {
+      showToast('导入失败: ' + error.message, 'error');
+    }
+  };
+
+  // 渲染本地导入模态框
+  const renderImportModal = () => {
+    if (!showImportModal) return null;
+    
+    return (
+      <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+        <div className="modal" onClick={e => e.stopPropagation()}>
+          <h3 className="modal-title">导入本地备份</h3>
+          <div style={{ padding: '16px 0' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                const input = document.createElement('input');
+                input.type = 'file';
+                input.accept = '.json';
+                input.onchange = async (e) => {
+                  const file = e.target.files && e.target.files[0];
+                  if (!file) return;
+                  
+                  if (!file.name.endsWith('.json')) {
+                    showToast('请选择 JSON 文件', 'error');
+                    return;
+                  }
+                  
+                  try {
+                    const text = await file.text();
+                    const data = JSON.parse(text);
+                    
+                    if (!data.lists || !data.tasks || !data.tags) {
+                      showToast('无效的备份文件格式', 'error');
+                      return;
+                    }
+                    
+                    handleImport(data);
+                  } catch (err) {
+                    showToast('文件解析失败: ' + err.message, 'error');
+                  }
+                };
+                input.click();
+              }}
+              style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+            >
+              <Icon name="folder" size={14} />
+              选择 JSON 文件
+            </button>
+            <p style={{ marginTop: '16px', fontSize: '13px', color: '#F59E0B' }}>
+              注意：导入会覆盖本地现有数据
+            </p>
+          </div>
+          <div className="modal-actions">
+            <button className="btn btn-secondary" onClick={() => setShowImportModal(false)}>
+              取消
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   // 检查任务是否过期
   const isOverdue = (task) => {
     if (!task.dueDate || task.completed) return false;
@@ -941,7 +1152,7 @@ function App() {
       </div>
 
       <div className="sidebar-footer">
-        <button 
+        <button
           className={`sidebar-action-btn ${isPulling ? 'syncing' : ''}`}
           onClick={handlePull}
           title="从云端恢复"
@@ -949,7 +1160,7 @@ function App() {
         >
           <Icon name="cloud-download" />
         </button>
-        <button 
+        <button
           className={`sidebar-action-btn ${isPushing ? 'syncing' : ''}`}
           onClick={handlePush}
           title="上传到云端"
@@ -957,7 +1168,17 @@ function App() {
         >
           <Icon name="cloud-upload" />
         </button>
-        <button 
+        <button
+          className="sidebar-action-btn"
+          onClick={() => {
+            console.log('本地导入按钮被点击了！');
+            showImportModalDirect();
+          }}
+          title="本地导入"
+        >
+          <Icon name="file-text" />
+        </button>
+        <button
           className="sidebar-action-btn"
           onClick={() => setShowTokenModal(true)}
           title="设置"
@@ -2107,7 +2328,17 @@ function App() {
         <div className="app">
           {renderSidebar()}
           <div className="main-content calendar-view">
-          <Calendar highlightedTaskId={highlightedTaskId} showToast={showToast} />
+          <Calendar
+            highlightedTaskId={highlightedTaskId}
+            showToast={showToast}
+            onTaskImported={async () => {
+              // Calendar 已经在自己 store 里写入数据库。
+              // 这里用 useStore 提供的 reloadTasks 重新拉取最新数据，
+              // 同步 App 端的 tasks state，让所有视图立刻看到新任务。
+              // 使用微任务调度，多次连续 import 时只在末尾执行一次。
+              scheduleReloadTasks();
+            }}
+          />
         </div>
         <GlobalSearch
           isOpen={isSearchOpen}
@@ -2160,6 +2391,7 @@ function App() {
           setTokenInput={setTokenInput}
           showToast={showToast}
         />
+        {renderImportModal()}
         </div>
         <ToastContainer toasts={toasts} removeToast={removeToast} />
       </>
@@ -2175,21 +2407,6 @@ function App() {
         {renderMainContent()}
       </div>
 
-      <div className="shortcut-hint">
-        <div className="shortcut-title">快捷键</div>
-        <div className="shortcut-item">
-          <span>快速添加</span>
-          <span className="shortcut-key">Ctrl+N</span>
-        </div>
-        <div className="shortcut-item">
-          <span>完成任务</span>
-          <span className="shortcut-key">Ctrl+D</span>
-        </div>
-        <div className="shortcut-item">
-          <span>全局搜索</span>
-          <span className="shortcut-key">Ctrl+F</span>
-        </div>
-      </div>
       <GlobalSearch
         isOpen={isSearchOpen}
         onClose={closeSearch}
@@ -2271,6 +2488,7 @@ function App() {
           </div>
         </div>
       )}
+      {renderImportModal()}
       <TokenModal
         isOpen={showTokenModal}
         onClose={() => setShowTokenModal(false)}

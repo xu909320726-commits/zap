@@ -24,15 +24,32 @@ export function useStore() {
     }));
   }, []);
 
+  // 重新加载数据（保留供外部使用，比如飞书导入后同步 App 端 tasks state）
+  const reloadTasks = useCallback(async () => {
+    try {
+      const tasksData = await dbGetAll('tasks');
+      const listsData = await dbGetAll('lists');
+      const tagsData = await dbGetAll('tags');
+      if (listsData.length > 0) {
+        setLists(parseTasks(listsData));
+      }
+      setTasks(parseTasks(tasksData.filter(t => !t.deletedAt)));
+      setTags(parseTasks(tagsData));
+      setDeletedTasks(parseTasks(tasksData.filter(t => t.deletedAt)));
+    } catch (e) {
+      console.error('reloadTasks failed:', e);
+    }
+  }, [parseTasks]);
+
   useEffect(() => {
     const loadData = async () => {
       try {
         await initDatabase();
-        
+
         const listsData = await dbGetAll('lists');
         const tasksData = await dbGetAll('tasks');
         const tagsData = await dbGetAll('tags');
-        
+
         setLists(listsData.length > 0 ? parseTasks(listsData) : [
           { id: 'todo', name: '待办事项', icon: 'circle', isDefault: true, createdAt: new Date().toISOString() }
         ]);
@@ -84,25 +101,25 @@ export function useStore() {
     setLists(newLists);
   }, [lists]);
 
-  const addTask = useCallback(async (title, listId = 'todo', dueDate = null, endDate = null, tagIds = [], linkUrl = null, note = null) => {
+  const addTask = useCallback(async (title, listId = 'todo', dueDate = null, endDate = null, tagIds = [], linkUrl = null, note = null, completed = false) => {
     const newTask = {
       id: uuidv4(),
       title,
       listId,
-      completed: 0,
+      completed: completed ? 1 : 0,
       dueDate: dueDate ? (dueDate instanceof Date ? dueDate.toISOString() : dueDate) : null,
       endDate: endDate ? (endDate instanceof Date ? endDate.toISOString() : endDate) : null,
       tagIds: JSON.stringify(tagIds),
       linkUrl: linkUrl || null,
       note: note || null,
       createdAt: new Date().toISOString(),
-      completedAt: null,
+      completedAt: completed ? new Date().toISOString() : null,
       deletedAt: null
     };
     await dbInsert('tasks', newTask);
     const taskWithParsed = {
       ...newTask,
-      completed: false,
+      completed: completed,
       isDefault: false,
       tagIds,
       linkUrl
@@ -324,7 +341,8 @@ export function useStore() {
     searchTasks,
     addTag,
     deleteTag,
-    updateTag
+    updateTag,
+    reloadTasks,
   };
 }
 
